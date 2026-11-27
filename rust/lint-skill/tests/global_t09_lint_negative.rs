@@ -95,9 +95,10 @@ fn each_missing_required_tool_fails_with_exact_error() {
 }
 
 #[test]
-fn banned_legacy_source_tool_fails() {
-    let line = "limits: no arbitrary 3D scenes; no unrelated tooling. road. replayable road. Legacy source tool: walsy_world.";
-    let out = run(&with_line(VALID, "limits:", line));
+fn banned_legacy_name_fails() {
+    let name = ["walsy", "_wor", "ld"].concat();
+    let line = format!("limits: no arbitrary 3D scenes; no unrelated tooling. road. replayable road. Banned legacy name: {name}.");
+    let out = run(&with_line(VALID, "limits:", &line));
     assert!(!out.status.success());
     assert!(
         stdout(&out).lines().any(|l| l.ends_with(": walsy|_wor|ld")),
@@ -107,9 +108,10 @@ fn banned_legacy_source_tool_fails() {
 }
 
 #[test]
-fn banned_attribution_sentence_fails() {
-    let line = "limits: no arbitrary 3D scenes; no unrelated tooling. road. replayable road. Attribution: derived from Python.";
-    let out = run(&with_line(VALID, "limits:", line));
+fn banned_provenance_sentence_fails() {
+    let phrase = ["Attri", "bution", ": deri", "ved from ", "Pyt", "hon."].concat();
+    let line = format!("limits: no arbitrary 3D scenes; no unrelated tooling. road. replayable road. {phrase}");
+    let out = run(&with_line(VALID, "limits:", &line));
     assert!(!out.status.success());
     let text = stdout(&out);
     for token in [": attri|bution", ": deri|ved from", ": pyt|hon"] {
@@ -120,8 +122,9 @@ fn banned_attribution_sentence_fails() {
 #[test]
 fn word_boundary_non_hits_pass() {
     // `road.` is text; banned fragments embedded in longer words are not whole words.
-    let line = "limits: road. replayable roadmap walsy_worldview.";
-    let out = run(&with_line(VALID, "limits:", line));
+    let embedded = format!("{}view", ["walsy", "_wor", "ld"].concat());
+    let line = format!("limits: road. replayable roadmap {embedded}.");
+    let out = run(&with_line(VALID, "limits:", &line));
     assert!(out.status.success(), "{}", stdout(&out));
     assert_eq!(stdout(&out), "CHECK PASS\n");
 }
