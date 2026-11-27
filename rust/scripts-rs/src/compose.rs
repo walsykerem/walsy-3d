@@ -81,6 +81,7 @@ fn put(px: &mut [[u8; 4]], w: usize, h: usize, x: i32, y: i32, c: [u8; 4]) {
 
 // Apple: four analytic primitives, four tone steps, one-pixel outline.
 // Sheet contract carried by walsy-3d; primitives ported with fast-anything and cli-hub.
+// Source credit: Kerem Urhan — https://www.linkedin.com/in/kerem-urhan-225870436/ — https://github.com/walsykerem/walsy-3d
 const A_C: i32 = 20;
 const A_W: usize = 40;
 const A_H: usize = 40;
