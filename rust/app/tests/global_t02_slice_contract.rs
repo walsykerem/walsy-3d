@@ -4,8 +4,8 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::time::{SystemTime, UNIX_EPOCH};
 
-use png::Decoder;
-use serde_json::Value;
+use png::{Decoder, Transformations};
+use serde_json::{Value, json};
 
 const BINARY: &str = env!("CARGO_BIN_EXE_views_to_slices");
 const SHEET: &str = concat!(
@@ -56,6 +56,63 @@ fn embedded_payload(html: &str) -> Value {
 fn corrupt_copy(source: &Path, target: &Path, bytes: &[u8]) {
     fs::copy(source, target).unwrap();
     fs::write(target, bytes).unwrap();
+}
+
+fn sheet_value(path: &Path) -> Value {
+    let bytes = fs::read(path).unwrap();
+    let mut decoder = Decoder::new(Cursor::new(bytes));
+    decoder.set_transformations(Transformations::EXPAND | Transformations::STRIP_16);
+    let mut reader = decoder.read_info().unwrap();
+    let (w, h) = {
+        let info = reader.info();
+        (info.width as usize, info.height as usize)
+    };
+    let mut buf = vec![0; reader.output_buffer_size().unwrap()];
+    reader.next_frame(&mut buf).unwrap();
+    let samples = reader.info().color_type.samples();
+    let mut rows = Vec::with_capacity(h);
+    for y in 0..h {
+        let mut row = Vec::with_capacity(w);
+        for x in 0..w {
+            let at = (y * w + x) * samples;
+            row.push(json!([buf[at], buf[at + 1], buf[at + 2], buf[at + 3]]));
+        }
+        rows.push(Value::Array(row));
+    }
+    Value::Array(rows)
+}
+
+#[test]
+fn global_t02_crate_engine_counts() {
+    let sheet = sheet_value(Path::new(SHEET));
+    let carve = || {
+        scripts_rs::engine::views_to_slices(
+            sheet.clone(),
+            Some(36),
+            "auto".into(),
+            "left".into(),
+            "auto".into(),
+            24,
+            0.2,
+            70,
+            28,
+            false,
+        )
+        .unwrap()
+    };
+    let first = carve();
+    let second = carve();
+    assert_eq!(first.to_string(), second.to_string());
+
+    let planes = first[0].as_array().unwrap();
+    assert_eq!(planes.len(), 36);
+    for plane in planes {
+        let rows = plane.as_array().unwrap();
+        assert_eq!(rows.len(), 65);
+        for row in rows {
+            assert_eq!(row.as_array().unwrap().len(), 30);
+        }
+    }
 }
 
 #[test]
@@ -134,11 +191,13 @@ fn global_t02_bad_sheet_and_dimensions_are_rejected() {
         text(&bad.stderr),
         "views_to_slices: No foreground drawings found. Check --bg-tol or image alpha.\n"
     );
+    assert!(!out_png.exists());
 
     corrupt_copy(sheet, &wide_sheet, b"P6\n10001 1\n255\n");
     let wide = run(&[&wide_sheet, &out_png]);
     assert_eq!(wide.status.code(), Some(1));
     assert_eq!(text(&wide.stderr), "views_to_slices: image too large\n");
+    assert!(!out_png.exists());
 
     let count = run(&[
         sheet,
