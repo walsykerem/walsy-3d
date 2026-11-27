@@ -1,0 +1,17 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "mcp": {
+    "servers": {
+      "walsy-3d": {
+        "type": "local",
+        "command": [
+          "${WALSY_SKILL_DIR}/rust/mcp/target/release/walsy-mcp"
+        ],
+        "environment": {
+          "WALSY_CLI": "${WALSY_SKILL_DIR}/rust/app/target/release/views_to_slices",
+          "WALSY_LINT": "${WALSY_SKILL_DIR}/rust/lint-skill/target/release/lint-skill"
+        }
+      }
+    }
+  }
+}

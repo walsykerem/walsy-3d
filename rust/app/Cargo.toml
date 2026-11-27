@@ -1,0 +1,22 @@
+[package]
+name = "views_to_slices"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+publish = false
+
+[[bin]]
+name = "views_to_slices"
+path = "src/main.rs"
+
+[dependencies]
+clap = "4"
+png = "0.18"
+serde_json = "1"
+scripts-rs = { path = "../scripts-rs" }
+
+[profile.release]
+lto = true
+codegen-units = 1
+
+[workspace]

@@ -1,0 +1,831 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>walsy-3d Turntable</title>
+<style>
+:root{color-scheme:light;font-family:system-ui,-apple-system,Segoe UI,sans-serif;background:#eceef1;color:#1c2026}
+*{box-sizing:border-box}
+body{margin:0;padding:20px;background:#eceef1}
+main{max-width:880px;margin:0 auto}
+header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
+h1{font-size:17px;font-weight:600;margin:0;letter-spacing:.01em}
+#meta{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#6b7480}
+.stage{display:flex;justify-content:center;overflow:auto;border:1px solid #d7dbe0;border-radius:10px;background:#f7f8f9;padding:8px;transition:background .2s}
+canvas{display:block;image-rendering:crisp-edges;image-rendering:pixelated;touch-action:none;cursor:grab;border-radius:4px}
+canvas.dragging{cursor:grabbing}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(146px,1fr));gap:12px 16px;margin-top:14px;align-items:end}
+label{font-size:12px;color:#5d6673;display:flex;flex-direction:column;gap:5px}
+label.check{flex-direction:row;align-items:center;gap:6px;font-size:12px}
+.out{font:11px/1 ui-monospace,SFMono-Regular,Menlo,monospace;color:#8b939e;margin-left:auto}
+.checks{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding-bottom:4px}
+input[type=range]{width:100%;accent-color:#4a7f8c}
+input[type=number],select{width:100%;padding:4px 6px;border:1px solid #d7dbe0;border-radius:5px;background:#fff;color:inherit;font:inherit;font-size:12px}
+input[type=file]{font-size:11px;color:#5d6673;max-width:100%}
+button{background:#37414c;color:#f4f6f8;border:0;border-radius:7px;padding:8px 14px;font:inherit;font-size:12px;font-weight:600;cursor:pointer;width:100%}
+button:hover{filter:brightness(1.12)}
+#play.playing{background:#4a7f8c}
+#readout{font:12px/1.5 ui-monospace,SFMono-Regular,Menlo,monospace;color:#5d6673;margin-top:10px;min-height:18px}
+footer{font-size:11px;color:#8b939e;margin-top:8px;line-height:1.5}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1 id="title">walsy-3d Turntable</h1>
+  <div id="meta">loading…</div>
+</header>
+<div class="stage" id="stage"><canvas id="view" width="320" height="320" role="img" aria-label="View mode"></canvas></div>
+<div id="readout">loading…</div>
+<div class="grid">
+  <div><button id="play" type="button" class="playing" title="Space: pause / play">Pause</button></div>
+  <div><button id="restart" type="button" title="Restore default controls">Restart</button></div>
+  <label>Angle <span class="out" id="angleOut">35°</span>
+    <input id="angle" type="range" min="0" max="360" step="1" value="35"></label>
+  <label>Squash <span class="out" id="squashOut">0.75</span>
+    <input id="squash" type="range" min="0.45" max="1" step="0.01" value="0.75"></label>
+  <label>Spacing <span class="out" id="spacingOut">1.00</span>
+    <input id="spacing" type="range" min="0" max="4" step="0.05" value="1"></label>
+  <label>Scale <span class="out" id="scaleOut">6x</span>
+    <input id="scale" type="range" min="2" max="14" step="1" value="6"></label>
+  <label>Slices
+    <input id="slices" type="number" min="1" max="256" step="1" value="36"></label>
+  <label>Time <span class="out" id="timeOut">Day</span>
+    <input id="time" type="range" min="0" max="100" step="1" value="40"></label>
+  <label>Sun <span class="out" id="sunOut">315°</span>
+    <input id="sun" type="range" min="0" max="360" step="1" value="315"></label>
+  <label>Mode
+    <select id="mode">
+      <option value="stack">Stacked</option>
+      <option value="scan">Slice scan</option>
+      <option value="explode">Exploded</option>
+    </select></label>
+  <div class="checks">
+    <label class="check"><input id="chkLight" type="checkbox" checked>Light</label>
+    <label class="check"><input id="chkShadow" type="checkbox" checked>Shadow</label>
+    <label class="check"><input id="chkOutline" type="checkbox" checked>Outline</label>
+  </div>
+  <label>Sheet <input id="file" type="file" accept="image/png,image/webp"></label>
+  <div><button id="export" type="button">Export 16 angles</button></div>
+</div>
+<footer id="hint">drag to rotate · shift+drag for sun · vertical drag squashes · Space pause · W/A/S/D nudge</footer>
+</main>
+<script>
+const EMBEDDED = {"title":"final-slices","slices":36,"sliceWidth":30,"sliceHeight":65,"sheet":"data:image/png;base64,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","top":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB4AAABBCAYAAADG6BSAAAABjUlEQVR4nO1ZTYrCMBQ2EjzGgOBCunbVvRfoCVz1CLPxBnOEWfUEHmNAcF1czEav4M5NhwiRRycveS+pbST5QBR5yZe8v368itvlOCOgoxity+rxff45CJftfDYRMnEcrm6/Pzv10UlDhVrjspHUxVzydVl1tgyfLLnQG0McdiuvzW3rRL+BaBf5kplQ1F8ifldXzS+6CHrDZqdxrhnEu2Jh/L9p7yx7DOm1TGnKaBcocYWhaQzNJI4bU3H6KJ6/N9fWizi95BL77bKj1Gmoq3Wd6/2lzQASUA4BoQ+ENZY4s9o3Y4OJQx6NriaTXjll4tEgKZ0qBNj+0/VqJW9fIWldUjdn9WhIWIGY6m3op5MSBf8USF8pDNVYolMgmTi7OifXYEhPgUhs1kgZhMKejPV19ixTSxTOvKNPaHtFYHW1LykFc86pqQcxzS6dQ1QMcBSFxZNCGIeu5sCW7ToUlPdO7DkXjHOINHofIeByo/ICpfkE3bhfXhzXv09WQ2AupdSz9GZlkJgwaIw5+AOo967MoO7OsQAAAABJRU5ErkJggg==","side":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAEEAAAAkCAYAAADWzlesAAABm0lEQVR4nO1ZMW7DMAy0DaPP6NQh8Jwpj8jgF2TKE/KIPKGTX+BnBAjQ2cjQpf1Cty4NFIABo1KRaMUOZfOWxAZsieTdiZLzn69jBlis6j/zezq0eZYQYN4hoGIr8UW7ecvmiJskALr33SWz1XafBCM21UvU84UdOAZ1b4q4JmHOKH3VlmaWLhOMkUQQE6ZumKQxUgnAjOEYZoyv3Bvn47W6/l9+d0Hva7rfbE2YfgkXnMlSEnHRNIZFnPWfCxMvxN7bGO3gUpZMjjvGFJbEuvkk5RBijEYOuFjAhPKeBl1JgYmkUn0TPAWIT/sEWw6ubJnKm6pLYIBLDn1hYilCB50qqu3ezwRppkkxAbOBYik8czq05DuLkLV6yPVaAtQYNQnKBJWDeoIa43/06hM4DdSjuktu04bHje4T5gDvyRLeYdpdo6/KQ7TcQ4wZnISbrXYjv4N0JIM8rlM5cJmQEjifCEQnYaxtvMqB0ydgjLG1NqsAPvPkjsmRg1gmjHmiFeUJrg7MwkO/YfrGXKxq9jvFMmFMFM+egAScASJZvZqSY1POAAAAAElFTkSuQmCC","front":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB4AAAAkCAYAAACe0YppAAABG0lEQVR4nGOUlpb+z8DAwJCgxcaADyy49gtM3zi2jhGbvIZVEEnmMDEMEGAhVcO1WWVgn1EKBszHoxaPBvXwS1ws2EoVSgA+M5BLNcbPD0/iLBiCFtyhyBHrElQwxLTSuhgHbz5GdvGNY+vAGBdAl8fmW6ItpiVgona8YgPYzGRBjnRYnYoP4AtuQpYj1+UDFtTw7ESMb6kBYL4e+JLrjJwWVgUmj66RZTAu8zAsJmQZoXyJnoKRzcDmiIEPamQXEus7bACbXpMFCLNvDBofU+JLQgCb2VgTF7WLTWwWD3xQYwO4gh89RIhVh9XHsJYBLWsnmB0oFtPKUlxmwysJZEDtCgNb13ZwJi5clb6GVRBZ6hiQwOBpc9ELAAAl23DekA4gUwAAAABJRU5ErkJggg==","back":"data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB4AAAAkCAYAAACe0YppAAAAr0lEQVR4nGP8/PAkA7FAwyroP4hel6CCVT5owR0wfePYOkZCZjExDBAYtXg0qGkGGKWlpcFZZMSkahYY44ycFl0sNHl0DUyP5mO6gZGXneCpGgZwVXmUAliVOXiCmlY+xeXz0XxMNzAa1HQDI68hwAjrScB6CTCAr0BBL/5IUQvrZbCgC6A7gFoAvVszmp0Grj7GlSjwAVLUDp52NTq4cWwdTk0aVkFkq2WAgpGXqgEz9jSwq6x8fgAAAABJRU5ErkJggg=="};
+const DEG = Math.PI / 180;
+const ELEV = 0.3;
+const clampN = (v, a, b) => v < a ? a : v > b ? b : v;
+const DEFAULTS = {
+  angle: 35, squash: 0.75, spacing: 1, scale: 6, slices: 0, // 0 = embedded strip's slice count
+  playing: true, time: 40, sun: 315, light: true, shadow: true, outline: true,
+  mode: 'stack'
+};
+const state = { ...DEFAULTS, scan: 0, dirty: true, lastMs: 0 };
+const ids = ['title','meta','readout','play','restart','angle','angleOut','squash','squashOut','spacing','spacingOut','scale','scaleOut','slices','time','timeOut','sun','sunOut','chkLight','chkShadow','chkOutline','mode','file','export','stage','view'];
+const els = {};
+for (const id of ids) els[id] = document.getElementById(id);
+const view = els.view, ctx = view.getContext('2d');
+
+let payloadSlices = 0, sliceW = 0, sliceH = 0, sheetData = null, sheetW = 0;
+let frontPx = null, backPx = null, vol = null, defaultSheet = null;
+let art = null, artCtx = null, artData = null, artW = 0, artH = 0;
+let solid = null, glow = { r: null, g: null, b: null };
+const sil = { front: 0, back: 0 };
+
+const ENVS = [
+  { t: 0,   bg: [12, 16, 28],    amb: [0.44, 0.50, 0.70], sun: [0.55, 0.66, 1.00], sunI: 0.92, pool: 1.5, shadowA: 0.18, outline: [8, 10, 18],  ground: [26, 30, 44] },
+  { t: 40,  bg: [238, 240, 243], amb: [0.76, 0.78, 0.82], sun: [1.04, 1.01, 0.95], sunI: 1.00, pool: 0.35, shadowA: 0.34, outline: [46, 50, 58], ground: [198, 202, 208] },
+  { t: 70,  bg: [250, 224, 200], amb: [0.80, 0.66, 0.58], sun: [1.26, 0.84, 0.58], sunI: 1.00, pool: 0.95, shadowA: 0.26, outline: [58, 36, 32], ground: [212, 178, 152] },
+  { t: 100, bg: [12, 16, 28],    amb: [0.44, 0.50, 0.70], sun: [0.55, 0.66, 1.00], sunI: 0.92, pool: 1.5, shadowA: 0.18, outline: [8, 10, 18],  ground: [26, 30, 44] }
+];
+
+function phaseName(t){
+  if (t < 22) return 'Night';
+  if (t < 58) return 'Day';
+  if (t < 88) return 'Sunset';
+  return 'Night';
+}
+
+function envAt(t){
+  const x = clampN(t, 0, 100);
+  let i = 0;
+  while (i < ENVS.length - 2 && x >= ENVS[i + 1].t) i++;
+  const a = ENVS[i], b = ENVS[i + 1];
+  const k = clampN((x - a.t) / Math.max(1e-6, b.t - a.t), 0, 1);
+  const mix = (p, q) => [p[0] + (q[0] - p[0]) * k, p[1] + (q[1] - p[1]) * k, p[2] + (q[2] - p[2]) * k];
+  return {
+    bg: mix(a.bg, b.bg), amb: mix(a.amb, b.amb), sun: mix(a.sun, b.sun),
+    outline: mix(a.outline, b.outline), ground: mix(a.ground, b.ground),
+    sunI: a.sunI + (b.sunI - a.sunI) * k,
+    pool: a.pool + (b.pool - a.pool) * k,
+    shadowA: a.shadowA + (b.shadowA - a.shadowA) * k,
+    name: phaseName(x)
+  };
+}
+
+function loadImage(src){
+  if (!src) return Promise.resolve(null);
+  return new Promise((resolve, reject) => {
+    const img = new Image();
+    img.onload = () => resolve(img);
+    img.onerror = () => reject(new Error('image load failed'));
+    img.src = src;
+  });
+}
+
+function pixels(img){
+  const cv = document.createElement('canvas');
+  cv.width = img.naturalWidth || img.width;
+  cv.height = img.naturalHeight || img.height;
+  const cc = cv.getContext('2d', { willReadFrequently: true });
+  cc.drawImage(img, 0, 0);
+  return { data: cc.getImageData(0, 0, cv.width, cv.height).data, width: cv.width, height: cv.height };
+}
+
+function buildVolume(){
+  if (!sheetData) return;
+  const n = clampN(state.slices | 0 || payloadSlices, 1, 256);
+  state.slices = n;
+  const w = sliceW, h = sliceH, len = w * h * n;
+  const minX = new Int16Array(n), maxX = new Int16Array(n), minY = new Int16Array(n), maxY = new Int16Array(n);
+  vol = {
+    w: w, h: h, n: n,
+    occ: new Uint8Array(len), r: new Uint8Array(len), g: new Uint8Array(len), b: new Uint8Array(len),
+    nx: new Int8Array(len), ny: new Int8Array(len), nz: new Int8Array(len),
+    ao: new Uint8Array(len), emis: new Uint8Array(len),
+    foot: new Uint8Array(w * h), emisCount: 0,
+    minX: minX, maxX: maxX, minY: minY, maxY: maxY
+  };
+  for (let z = 0; z < n; z++){
+    minX[z] = w; maxX[z] = -1; minY[z] = h; maxY[z] = -1;
+    const sz = n === 1 ? 0 : Math.round(z * (payloadSlices - 1) / (n - 1));
+    for (let y = 0; y < h; y++){
+      const rowBase = y * sheetW + sz * sliceW;
+      for (let x = 0; x < w; x++){
+        const si = (rowBase + x) * 4;
+        if (sheetData[si + 3] < 24) continue;
+        const i = (z * h + y) * w + x;
+        vol.occ[i] = 1;
+        vol.r[i] = sheetData[si];
+        vol.g[i] = sheetData[si + 1];
+        vol.b[i] = sheetData[si + 2];
+        const lum = sheetData[si] * 0.3 + sheetData[si + 1] * 0.59 + sheetData[si + 2] * 0.11;
+        if (lum > 196){
+          const e = clampN((lum - 196) * 9, 0, 255) | 0;
+          vol.emis[i] = e;
+          if (e > 40) vol.emisCount++;
+        }
+        vol.foot[y * w + x] = 1;
+        if (x < minX[z]) minX[z] = x;
+        if (x > maxX[z]) maxX[z] = x;
+        if (y < minY[z]) minY[z] = y;
+        if (y > maxY[z]) maxY[z] = y;
+      }
+    }
+  }
+  const at = (x, y, z) => (x < 0 || y < 0 || z < 0 || x >= w || y >= h || z >= n) ? 0 : vol.occ[(z * h + y) * w + x];
+  for (let z = 0; z < n; z++){
+    for (let y = 0; y < h; y++){
+      for (let x = 0; x < w; x++){
+        const i = (z * h + y) * w + x;
+        if (!vol.occ[i]) continue;
+        vol.nx[i] = at(x + 1, y, z) - at(x - 1, y, z);
+        vol.ny[i] = at(x, y + 1, z) - at(x, y - 1, z);
+        vol.nz[i] = at(x, y, z + 1) - at(x, y, z - 1);
+        const occ6 = at(x + 1, y, z) + at(x - 1, y, z) + at(x, y + 1, z) + at(x, y - 1, z) + at(x, y, z + 1) + at(x, y, z - 1);
+        vol.ao[i] = 255 - occ6 * 26;
+      }
+    }
+  }
+  sil.front = matchMask(frontPx);
+  sil.back = matchMask(backPx);
+  els.meta.textContent = state.slices + ' slices · ' + sliceW + 'x' + sliceH + 'px';
+}
+
+function matchMask(img){
+  if (!img || !vol) return 0;
+  let hit = 0, tot = 0;
+  for (let y = 0; y < vol.h; y++){
+    for (let x = 0; x < vol.w; x++){
+      if (!vol.foot[y * vol.w + x]) continue;
+      tot++;
+      const sx = Math.min(img.width - 1, Math.floor(x * img.width / vol.w));
+      const sy = Math.min(img.height - 1, Math.floor(y * img.height / vol.h));
+      if (img.data[(sy * img.width + sx) * 4 + 3] > 40) hit++;
+    }
+  }
+  return tot ? Math.round(hit * 100 / tot) : 0;
+}
+
+function spread(){
+  return state.spacing * (state.mode === 'explode' ? 2.2 : 1);
+}
+
+function groundY(){
+  return Math.round(artH / 2 + vol.h * 0.5 * state.squash);
+}
+
+function layout(){
+  if (!vol) return;
+  const S = spread();
+  const halfW = vol.w / 2, halfH = vol.h / 2;
+  let mx = 0;
+  for (let a = 0; a <= 90; a += 3){
+    const c = Math.cos(a * DEG), s = Math.sin(a * DEG);
+    mx = Math.max(mx, halfW * c + (vol.n - 1) * S * s * 0.5);
+  }
+  const maxHalfW = mx + 6;
+  const maxHalfH = halfH + (vol.n - 1) * S * ELEV * 0.5 + 8;
+  artW = Math.ceil(maxHalfW * 2) + 4;
+  artH = Math.ceil(maxHalfH * 2) + 4;
+  art = document.createElement('canvas');
+  art.width = artW;
+  art.height = artH;
+  artCtx = art.getContext('2d');
+  artData = artCtx.createImageData(artW, artH);
+  solid = new Uint8Array(artW * artH);
+  glow = { r: new Float32Array(artW * artH), g: new Float32Array(artW * artH), b: new Float32Array(artW * artH) };
+  resize();
+  state.dirty = true;
+}
+
+function resize(){
+  if (!artData) return;
+  const s = clampN(Math.round(state.scale) || 6, 2, 14);
+  view.width = artW * s;
+  view.height = artH * s;
+  view.style.width = (artW * s) + 'px';
+  view.style.height = (artH * s) + 'px';
+  ctx.imageSmoothingEnabled = false;
+  state.dirty = true;
+}
+
+function background(px, env){
+  const c = env.bg;
+  for (let y = 0; y < artH; y++){
+    const k = y / Math.max(1, artH - 1);
+    const r = c[0] * (1 - 0.10 * k), g = c[1] * (1 - 0.10 * k), b = c[2] * (1 - 0.08 * k);
+    const row = y * artW * 4;
+    for (let x = 0; x < artW; x++){
+      const o = row + x * 4;
+      px[o] = r; px[o + 1] = g; px[o + 2] = b; px[o + 3] = 255;
+    }
+  }
+}
+
+function groundLine(px, env){
+  const y = Math.min(artH - 1, groundY() + 2);
+  const c = env.ground;
+  for (let x = 0; x < artW; x++){
+    const edge = Math.min(x, artW - 1 - x) / (artW * 0.16 + 1);
+    const a = 0.55 * Math.min(1, edge);
+    if (a <= 0.02) continue;
+    const o = (y * artW + x) * 4;
+    px[o] = px[o] * (1 - a) + c[0] * a;
+    px[o + 1] = px[o + 1] * (1 - a) + c[1] * a;
+    px[o + 2] = px[o + 2] * (1 - a) + c[2] * a;
+  }
+}
+
+function addGlow(px, cx, cy, rad, r, g, b, k){
+  for (let y = Math.max(0, cy - rad); y <= Math.min(artH - 1, cy + rad); y++){
+    const dy = (y - cy) / rad;
+    for (let x = Math.max(0, cx - rad); x <= Math.min(artW - 1, cx + rad); x++){
+      const dx = (x - cx) / rad;
+      const f = 1 - Math.sqrt(dx * dx + dy * dy);
+      if (f <= 0) continue;
+      const a = f * f * k;
+      const o = (y * artW + x) * 4;
+      px[o] = Math.min(255, px[o] + r * a);
+      px[o + 1] = Math.min(255, px[o + 1] + g * a);
+      px[o + 2] = Math.min(255, px[o + 2] + b * a);
+    }
+  }
+}
+
+// ground-plane passes (shadow, light pools) share one projection of the slice bottoms
+function groundPass(px, env, ca, sa, S){
+  const w = vol.w, h = vol.h, n = vol.n;
+  const half = (n - 1) * 0.5;
+  const zs = Math.max(1, Math.round(n / 22));
+  const stepX = Math.max(1, Math.round(w / 18));
+  const stepY = Math.max(1, Math.round(h / 18));
+  const sr = state.sun * DEG;
+  const skewX = -Math.cos(sr) * 7, skewY = -Math.sin(sr) * 2;
+  const gy = groundY();
+  if (state.shadow){
+    const a = env.shadowA;
+    for (let z = 0; z < n; z += zs){
+      const off = (z - half) * S;
+      for (let y = vol.h - 1; y >= 0; y -= stepY){
+        for (let x = 0; x < w; x += stepX){
+          if (!vol.foot[y * w + x]) continue;
+          const u = x - w / 2;
+          const ax = Math.round(artW / 2 + u * ca + off * sa + skewX);
+          const ay = Math.round(gy + 2 + skewY + (off * sa - u * sa) * 0.05);
+          if (ax < 0 || ay < 0 || ax >= artW || ay >= artH) continue;
+          const o = (ay * artW + ax) * 4;
+          px[o] = px[o] * (1 - a) + 18 * a;
+          px[o + 1] = px[o + 1] * (1 - a) + 21 * a;
+          px[o + 2] = px[o + 2] * (1 - a) + 27 * a;
+          if (ax + 1 < artW){
+            const o2 = o + 4;
+            px[o2] = px[o2] * (1 - a) + 20 * a;
+            px[o2 + 1] = px[o2 + 1] * (1 - a) + 23 * a;
+            px[o2 + 2] = px[o2 + 2] * (1 - a) + 29 * a;
+          }
+        }
+      }
+    }
+  }
+  if (!vol.emisCount) return;
+  const hz = Math.max(1, Math.round(n / 12));
+  for (let z = 0; z < n; z += hz){
+    const off = (z - half) * S;
+    for (let y = 0; y < h; y += stepY){
+      for (let x = 0; x < w; x += stepX){
+        const i = (z * h + y) * w + x;
+        const e = vol.emis[i];
+        if (e < 120) continue;
+        const u = x - w / 2;
+        const ax = Math.round(artW / 2 + u * ca + off * sa);
+        const ay = Math.round(gy + 1);
+        addGlow(px, ax, ay, 6, vol.r[i], vol.g[i], vol.b[i], (e / 255) * env.pool * 0.4);
+      }
+    }
+  }
+}
+
+function paintGhost(px, img, ca, sa, alpha, offsetY){
+  if (!img) return;
+  const w = img.width, h = img.height, cx = w / 2, cy = h / 2;
+  const a = ca >= 0 ? Math.max(ca, 0.13) : Math.min(ca, -0.13);
+  const invA = 1 / a, invSq = 1 / state.squash;
+  const ox = artW / 2, b = sa * ELEV;
+  const base = alpha / 255;
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  for (let c = 0; c < 4; c++){
+    const u = (c & 1 ? cx : -cx), vv = (c & 2 ? cy : -cy);
+    const ax = ox + u * a, ay = offsetY + vv * state.squash + u * b;
+    if (ax < x0) x0 = ax;
+    if (ax > x1) x1 = ax;
+    if (ay < y0) y0 = ay;
+    if (ay > y1) y1 = ay;
+  }
+  const ax0 = Math.max(0, Math.floor(x0)), ax1 = Math.min(artW - 1, Math.ceil(x1));
+  const ay0 = Math.max(0, Math.floor(y0)), ay1 = Math.min(artH - 1, Math.ceil(y1));
+  for (let ay = ay0; ay <= ay1; ay++){
+    const dy = ay - offsetY;
+    const row = ay * artW;
+    for (let ax = ax0; ax <= ax1; ax++){
+      const u = (ax - ox) * invA;
+      const sx = Math.round(u + cx), sy = Math.round((dy - u * b) * invSq + cy);
+      if (sx < 0 || sy < 0 || sx >= w || sy >= h) continue;
+      const si = (sy * w + sx) * 4;
+      const sa2 = img.data[si + 3];
+      if (sa2 < 30) continue;
+      const k = base * (sa2 / 255);
+      const o = (row + ax) * 4;
+      px[o] = px[o] * (1 - k) + img.data[si] * k;
+      px[o + 1] = px[o + 1] * (1 - k) + img.data[si + 1] * k;
+      px[o + 2] = px[o + 2] * (1 - k) + img.data[si + 2] * k;
+    }
+  }
+}
+
+function visibleSlices(){
+  const n = vol.n, out = [];
+  if (state.mode === 'scan'){
+    const half = Math.min(5, Math.max(1, Math.floor(n / 4)));
+    const idx = ((Math.round(state.scan) % n) + n) % n;
+    for (let z = idx - half; z <= idx + half; z++) if (z >= 0 && z < n) out.push({ z: z, d: z });
+    const mid = (n - 1) * 0.5;
+    out.sort((p, q) => (p.z - mid) - (q.z - mid));
+  } else {
+    for (let z = 0; z < n; z++) out.push({ z: z, d: z });
+    const c = Math.cos(state.angle * DEG);
+    out.sort((p, q) => c >= 0 ? p.z - q.z : q.z - p.z);
+  }
+  return out;
+}
+
+function drawSlice(px, z, ca, sa, env, L, S){
+  const w = vol.w, h = vol.h, cx = w / 2, cy = h / 2;
+  const mid = (vol.n - 1) * 0.5;
+  const off = (z - mid) * S;
+  const a = ca >= 0 ? Math.max(ca, 0.13) : Math.min(ca, -0.13);
+  const invA = 1 / a;
+  const ox = artW / 2 + off * sa;
+  const oy = artH / 2 + off * ca * ELEV;
+  const sq = state.squash, invSq = 1 / sq;
+  const b = sa * ELEV;
+  const minX = vol.minX[z], maxX = vol.maxX[z], minY = vol.minY[z], maxY = vol.maxY[z];
+  if (maxX < 0) return;
+  let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
+  for (let c = 0; c < 4; c++){
+    const u = (c & 1 ? maxX + 1 : minX) - cx;
+    const vv = (c & 2 ? maxY + 1 : minY) - cy;
+    const ax = ox + u * a;
+    const ay = oy + vv * sq + u * b;
+    if (ax < x0) x0 = ax;
+    if (ax > x1) x1 = ax;
+    if (ay < y0) y0 = ay;
+    if (ay > y1) y1 = ay;
+  }
+  const ax0 = Math.max(0, Math.floor(x0)), ax1 = Math.min(artW - 1, Math.ceil(x1));
+  const ay0 = Math.max(0, Math.floor(y0)), ay1 = Math.min(artH - 1, Math.ceil(y1));
+  const amb = env.amb, sunC = env.sun, sunI = env.sunI, lit = state.light;
+  for (let ay = ay0; ay <= ay1; ay++){
+    const dy = ay - oy;
+    const row = ay * artW;
+    for (let ax = ax0; ax <= ax1; ax++){
+      const u = (ax - ox) * invA;
+      const vv = (dy - u * b) * invSq;
+      const sx = Math.round(u + cx), sy = Math.round(vv + cy);
+      if (sx < minX || sx > maxX || sy < minY || sy > maxY) continue;
+      const i = (z * h + sy) * w + sx;
+      if (!vol.occ[i]) continue;
+      const aof = vol.ao[i] / 255;
+      const ambF = 0.45 + 0.55 * aof;
+      let r, g, bl;
+      if (lit){
+        let d = vol.nx[i] * L.x + vol.ny[i] * L.y + vol.nz[i] * L.z;
+        d = d > 0 ? Math.min(1.05, d * 0.55) * sunI : 0;
+        r = vol.r[i] * (amb[0] * ambF + sunC[0] * d);
+        g = vol.g[i] * (amb[1] * ambF + sunC[1] * d);
+        bl = vol.b[i] * (amb[2] * ambF + sunC[2] * d);
+      } else {
+        const f = 0.55 + 0.45 * aof;
+        r = vol.r[i] * f;
+        g = vol.g[i] * f;
+        bl = vol.b[i] * f;
+      }
+      const e = vol.emis[i];
+      if (e){
+        const k = e / 255;
+        const ek = 1 + k * 1.6;
+        r *= ek; g *= ek; bl *= ek;
+        if (k > 0.3){
+          glow.r[row + ax] += vol.r[i] * k * 0.85;
+          glow.g[row + ax] += vol.g[i] * k * 0.85;
+          glow.b[row + ax] += vol.b[i] * k * 0.85;
+        }
+      }
+      const o = (row + ax) * 4;
+      px[o] = r > 255 ? 255 : r;
+      px[o + 1] = g > 255 ? 255 : g;
+      px[o + 2] = bl > 255 ? 255 : bl;
+      px[o + 3] = 255;
+      solid[row + ax] = 1;
+    }
+  }
+}
+
+function bloom(px){
+  const R = 2;
+  for (let y = 0; y < artH; y++){
+    const y0 = Math.max(0, y - R), y1 = Math.min(artH - 1, y + R);
+    for (let x = 0; x < artW; x++){
+      const x0 = Math.max(0, x - R), x1 = Math.min(artW - 1, x + R);
+      let sr = 0, sg = 0, sb = 0, cnt = 0;
+      for (let yy = y0; yy <= y1; yy++){
+        let idx = yy * artW + x0;
+        for (let xx = x0; xx <= x1; xx++, idx++){
+          sr += glow.r[idx]; sg += glow.g[idx]; sb += glow.b[idx]; cnt++;
+        }
+      }
+      if (sr + sg + sb < 3) continue;
+      const inv = 0.55 / cnt;
+      const o = (y * artW + x) * 4;
+      px[o] = Math.min(255, px[o] + sr * inv);
+      px[o + 1] = Math.min(255, px[o + 1] + sg * inv);
+      px[o + 2] = Math.min(255, px[o + 2] + sb * inv);
+    }
+  }
+}
+
+function outlinePass(px, env){
+  const c = env.outline;
+  for (let y = 1; y < artH - 1; y++){
+    for (let x = 1; x < artW - 1; x++){
+      const i = y * artW + x;
+      if (!solid[i]) continue;
+      if (solid[i - 1] && solid[i + 1] && solid[i - artW] && solid[i + artW]) continue;
+      const o = i * 4;
+      px[o] = c[0]; px[o + 1] = c[1]; px[o + 2] = c[2]; px[o + 3] = 255;
+    }
+  }
+}
+
+function updateReadout(env){
+  const a = ((Math.round(state.angle) % 360) + 360) % 360;
+  let s = a + '°';
+  if (state.mode === 'scan'){
+    s += ' · slice ' + (((Math.round(state.scan) % vol.n) + vol.n) % vol.n) + '/' + (vol.n - 1) +
+      ' · front ' + sil.front + '% · back ' + sil.back + '%';
+  } else if (state.mode === 'explode'){
+    s += ' · gap ' + spread().toFixed(2) + ' · ' + vol.n + ' slices';
+  } else {
+    s += ' · squash ' + state.squash.toFixed(2) + ' · spacing ' + state.spacing.toFixed(2) +
+      ' · sun ' + (Math.round(state.sun) % 360) + '°';
+  }
+  s += ' · ' + env.name + ' · ' + state.lastMs.toFixed(1) + ' ms';
+  els.readout.textContent = s;
+}
+
+function walsyDrawFrame(){
+  if (!vol || !artData) return;
+  const t0 = performance.now();
+  const px = artData.data;
+  const env = envAt(state.time);
+  const ang = state.angle * DEG;
+  const ca = Math.cos(ang), sa = Math.sin(ang);
+  const S = spread();
+  const sr = state.sun * DEG;
+  const L = { x: Math.cos(sr) * 0.82, y: -0.55, z: Math.sin(sr) * 0.82 };
+  const m = Math.hypot(L.x, L.y, L.z) || 1;
+  L.x /= m; L.y /= m; L.z /= m;
+  background(px, env);
+  solid.fill(0);
+  glow.r.fill(0); glow.g.fill(0); glow.b.fill(0);
+  groundPass(px, env, ca, sa, S);
+  groundLine(px, env);
+  if (state.mode === 'scan'){
+    const midY = artH / 2;
+    paintGhost(px, frontPx, ca, sa, 46, midY);
+    paintGhost(px, backPx, ca, sa, 30, midY + 2);
+  }
+  const order = visibleSlices();
+  for (let k = 0; k < order.length; k++) drawSlice(px, order[k].z, ca, sa, env, L, S);
+  bloom(px);
+  if (state.outline) outlinePass(px, env);
+  artCtx.putImageData(artData, 0, 0);
+  ctx.clearRect(0, 0, view.width, view.height);
+  ctx.drawImage(art, 0, 0, artW, artH, 0, 0, view.width, view.height);
+  els.stage.style.background = 'rgb(' + (env.bg[0] | 0) + ',' + (env.bg[1] | 0) + ',' + (env.bg[2] | 0) + ')';
+  state.lastMs = performance.now() - t0;
+  updateReadout(env);
+}
+
+let lastT = 0;
+const keys = { up: false, down: false, left: false, right: false };
+const KEYMAP = {
+  w: 'up', W: 'up', ArrowUp: 'up',
+  s: 'down', S: 'down', ArrowDown: 'down',
+  a: 'left', A: 'left', ArrowLeft: 'left',
+  d: 'right', D: 'right', ArrowRight: 'right'
+};
+
+function walsyTick(now){
+  const dt = lastT ? Math.min(0.05, (now - lastT) / 1000) : 0;
+  lastT = now;
+  let moved = false;
+  if (state.playing){
+    state.angle = (state.angle + 46 * dt) % 360;
+    moved = true;
+  }
+  if (keys.up || keys.down || keys.left || keys.right){
+    if (keys.up) state.squash = clampN(state.squash + 0.9 * dt, 0.45, 1);
+    if (keys.down) state.squash = clampN(state.squash - 0.9 * dt, 0.45, 1);
+    if (keys.left) state.angle = (state.angle - 90 * dt + 360) % 360;
+    if (keys.right) state.angle = (state.angle + 90 * dt) % 360;
+    moved = true;
+  }
+  if (state.mode === 'scan' && vol){
+    state.scan = (state.scan + dt * 11) % Math.max(1, vol.n);
+    moved = true;
+  }
+  if (moved) state.dirty = true;
+  if (state.dirty){
+    walsyDrawFrame();
+    state.dirty = false;
+  }
+  requestAnimationFrame(walsyTick);
+}
+
+function sync(){
+  const deg = ((Math.round(state.angle) % 360) + 360) % 360;
+  els.angle.value = String(deg);
+  els.angleOut.textContent = deg + '°';
+  els.squash.value = state.squash.toFixed(2);
+  els.squashOut.textContent = state.squash.toFixed(2);
+  els.spacing.value = state.spacing.toFixed(2);
+  els.spacingOut.textContent = state.spacing.toFixed(2);
+  els.scale.value = String(state.scale);
+  els.scaleOut.textContent = state.scale + 'x';
+  els.slices.value = String(state.slices);
+  els.mode.value = state.mode;
+  els.chkLight.checked = state.light;
+  els.chkShadow.checked = state.shadow;
+  els.chkOutline.checked = state.outline;
+  els.time.value = String(state.time);
+  els.timeOut.textContent = phaseName(state.time);
+  els.sun.value = String(((Math.round(state.sun) % 360) + 360) % 360);
+  els.sunOut.textContent = (((Math.round(state.sun) % 360) + 360) % 360) + '°';
+  els.play.textContent = state.playing ? 'Pause' : 'Play';
+  els.play.classList.toggle('playing', state.playing);
+}
+
+function togglePlay(){
+  state.playing = !state.playing;
+  state.dirty = true;
+  sync();
+}
+
+function restart(){
+  if (defaultSheet){
+    sheetData = defaultSheet.data;
+    sheetW = defaultSheet.width;
+    sliceH = defaultSheet.height;
+    payloadSlices = defaultSheet.slices;
+    frontPx = defaultSheet.front;
+    backPx = defaultSheet.back;
+    els.file.value = '';
+  }
+  Object.assign(state, DEFAULTS, { slices: payloadSlices, scan: 0 });
+  keys.up = keys.down = keys.left = keys.right = false;
+  lastT = 0;
+  stopDrag();
+  buildVolume();
+  layout();
+  sync();
+  walsyDrawFrame();
+}
+
+els.play.addEventListener('click', togglePlay);
+els.restart.addEventListener('click', restart);
+els.angle.addEventListener('input', () => { state.angle = Number(els.angle.value); els.angleOut.textContent = Math.round(state.angle) + '°'; state.dirty = true; });
+els.squash.addEventListener('input', () => { state.squash = Number(els.squash.value); els.squashOut.textContent = Number(els.squash.value).toFixed(2); state.dirty = true; });
+els.spacing.addEventListener('input', () => {
+  state.spacing = Number(els.spacing.value);
+  els.spacingOut.textContent = Number(els.spacing.value).toFixed(2);
+  layout();
+});
+els.scale.addEventListener('input', () => {
+  state.scale = Number(els.scale.value);
+  els.scaleOut.textContent = state.scale + 'x';
+  resize();
+});
+els.slices.addEventListener('change', () => {
+  state.slices = clampN(parseInt(els.slices.value, 10) || payloadSlices, 1, 256);
+  els.slices.value = String(state.slices);
+  buildVolume();
+  layout();
+});
+els.time.addEventListener('input', () => {
+  state.time = Number(els.time.value);
+  els.timeOut.textContent = phaseName(state.time);
+  state.dirty = true;
+});
+els.sun.addEventListener('input', () => {
+  state.sun = Number(els.sun.value);
+  els.sunOut.textContent = Math.round(state.sun) + '°';
+  state.dirty = true;
+});
+els.mode.addEventListener('change', () => {
+  state.mode = els.mode.value;
+  layout();
+});
+els.chkLight.addEventListener('change', () => { state.light = els.chkLight.checked; state.dirty = true; });
+els.chkShadow.addEventListener('change', () => { state.shadow = els.chkShadow.checked; state.dirty = true; });
+els.chkOutline.addEventListener('change', () => { state.outline = els.chkOutline.checked; state.dirty = true; });
+
+els.file.addEventListener('change', async () => {
+  const f = els.file.files && els.file.files[0];
+  if (!f) return;
+  try {
+    const img = await loadImage(URL.createObjectURL(f));
+    const raw = pixels(img);
+    if (sliceW < 1 || raw.width % sliceW !== 0) throw new Error('width must be a multiple of ' + sliceW + 'px');
+    sheetData = raw.data;
+    sheetW = raw.width;
+    sliceH = raw.height;
+    payloadSlices = Math.max(1, Math.round(raw.width / sliceW));
+    state.slices = payloadSlices;
+    els.slices.value = String(payloadSlices);
+    buildVolume();
+    layout();
+  } catch (err){
+    els.readout.textContent = 'Load failed: ' + err.message;
+  }
+});
+
+function exportStrip(){
+  if (!vol) return;
+  const keepAngle = state.angle, keepPlaying = state.playing;
+  state.playing = false;
+  const strip = document.createElement('canvas');
+  strip.width = artW * 16;
+  strip.height = artH;
+  const sc = strip.getContext('2d');
+  for (let i = 0; i < 16; i++){
+    state.angle = i * 22.5;
+    walsyDrawFrame();
+    sc.putImageData(artCtx.getImageData(0, 0, artW, artH), i * artW, 0);
+  }
+  const name = (EMBEDDED && EMBEDDED.title) || 'walsy-3d-turntable';
+  const a = document.createElement('a');
+  a.download = name + '-16dir.png';
+  a.href = strip.toDataURL('image/png');
+  a.click();
+  state.angle = keepAngle;
+  state.playing = keepPlaying;
+  state.dirty = true;
+  sync();
+  walsyDrawFrame();
+}
+els.export.addEventListener('click', exportStrip);
+
+let drag = null;
+function stopDrag(){
+  if (!drag) return;
+  drag = null;
+  view.classList.remove('dragging');
+}
+view.addEventListener('pointerdown', (e) => {
+  state.playing = false;
+  sync();
+  drag = { id: e.pointerId, x: e.clientX, y: e.clientY, angle: state.angle, sun: state.sun, squash: state.squash, shift: e.shiftKey };
+  view.setPointerCapture(e.pointerId);
+  view.classList.add('dragging');
+  e.preventDefault();
+});
+view.addEventListener('pointermove', (e) => {
+  if (!drag) return;
+  const dx = e.clientX - drag.x;
+  const dy = e.clientY - drag.y;
+  if (drag.shift || e.shiftKey){
+    state.sun = ((drag.sun + dx * 0.7) % 360 + 360) % 360;
+  } else {
+    state.angle = ((drag.angle + dx * 0.7) % 360 + 360) % 360;
+  }
+  state.squash = clampN(drag.squash - dy * 0.004, 0.45, 1);
+  sync();
+  state.dirty = true;
+});
+view.addEventListener('pointerup', stopDrag);
+view.addEventListener('pointercancel', stopDrag);
+view.addEventListener('lostpointercapture', stopDrag);
+
+function typing(e){
+  const t = e.target;
+  return !!t && (t.tagName === 'INPUT' || t.tagName === 'SELECT' || t.tagName === 'TEXTAREA' || t.tagName === 'BUTTON' || t.isContentEditable);
+}
+
+window.addEventListener('keydown', (e) => {
+  if (typing(e)) return;
+  if (e.code === 'Space' || e.key === ' '){
+    e.preventDefault();
+    togglePlay();
+    return;
+  }
+  const k = KEYMAP[e.key];
+  if (!k) return;
+  e.preventDefault();
+  if (!keys[k]){
+    keys[k] = true;
+    if (k === 'left' || k === 'right') state.playing = false;
+    sync();
+    state.dirty = true;
+  }
+});
+window.addEventListener('keyup', (e) => {
+  const k = KEYMAP[e.key];
+  if (k) keys[k] = false;
+});
+window.addEventListener('blur', () => {
+  keys.up = keys.down = keys.left = keys.right = false;
+});
+
+async function boot(){
+  const data = EMBEDDED || {};
+  sliceW = data.sliceWidth | 0;
+  sliceH = data.sliceHeight | 0;
+  payloadSlices = data.slices | 0;
+  if (!(sliceW > 0 && sliceH > 0 && payloadSlices > 0)) throw new Error('payload missing');
+  const imgs = await Promise.all([loadImage(data.sheet), loadImage(data.front), loadImage(data.back)]);
+  if (!imgs[0]) throw new Error('sheet missing');
+  const raw = pixels(imgs[0]);
+  if (raw.width !== sliceW * payloadSlices || raw.height !== sliceH) throw new Error('sheet size mismatch');
+  sheetData = raw.data;
+  sheetW = raw.width;
+  frontPx = imgs[1] ? pixels(imgs[1]) : null;
+  backPx = imgs[2] ? pixels(imgs[2]) : null;
+  defaultSheet = { data: raw.data, width: raw.width, height: raw.height, slices: payloadSlices, front: frontPx, back: backPx };
+  const title = data.title || 'walsy-3d Turntable';
+  els.title.textContent = title;
+  document.title = title;
+  state.slices = payloadSlices;
+  els.slices.value = String(payloadSlices);
+  buildVolume();
+  layout();
+  sync();
+  walsyDrawFrame();
+}
+
+boot().catch(err => { els.readout.textContent = 'Load failed: ' + err.message; });
+requestAnimationFrame(walsyTick);
+</script>
+</body>
+</html>

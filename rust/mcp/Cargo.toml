@@ -1,0 +1,13 @@
+[package]
+name = "walsy-mcp"
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.97"
+publish = false
+description = "Minimal MCP stdio server for walsy-3d workflows"
+
+[dependencies]
+serde_json = "1"
+
+[profile.release]
+lto = true
