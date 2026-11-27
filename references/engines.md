@@ -4,12 +4,12 @@ Every engine runs the loop from `SKILL.md` step 3:
 
 1. Rotate each slice about `(w - 1) * 0.5, (h - 1) * 0.5`, with `Math.round(...)` to whole art pixels.
 2. Scale y by `squash`.
-3. Lift by `-round(z * spacing)`.
+3. Lift by `-z * spacing` in floating-point screen px.
 4. Draw at a whole-pixel position with nearest filtering.
 
 `Math.floor(... + w / 2)` shifts even-width pivots by 0.5 art px and wobbles at 90°/180°/270°. Never mix centre conventions.
 
-Shared numbers: `squash = 0.75`, `spacing = 1.0` at art-pixel scale; tilting camera `squash = sin(elevation)`, `spacing = cos(elevation)`. Keep motion in floating-point screen px; round once at the final 1-screen-pixel blit. Validate `sheet.width % count === 0` and slice dimensions at load. Outline the finished stack once in a 1x art-pixel buffer, never per slice. Y-sort whole stacks by ground point; bake static stacks at load.
+Shared numbers: `squash = sin(elevation)`, `spacing = cos(elevation)` at art-pixel scale; the Rust static preview uses `49°`. At `0°` slices are edge-on (flat-width stack); at `90°` they are top-down and stack width equals sliceHeight. Rust `elevation_projection(deg)` returns `(squash, spacing)`; `paint_stack` keeps `z * spacing` continuous and rounds only when sampling the final 1-screen-pixel blit. Never round the per-slice rise: duplicate rises merge adjacent layers into a flat wall and leave stripes. Keep motion in floating-point screen px; round once at the final blit. Validate `sheet.width % count === 0` and slice dimensions at load. Outline the finished stack once in a 1x art-pixel buffer, never per slice. Y-sort whole stacks by ground point; bake static stacks at load.
 
 ## Web: Canvas 2D
 
