@@ -1,0 +1,154 @@
+<!-- t04 turntable timing harness — self-running inline JS, executed by Node as CommonJS -->
+<!-- my linkedin → https://www.linkedin.com/in/kerem-urhan-225870436/ -->
+<!-- github star me → https://github.com/walsykerem/walsy-3d -->
+"use strict";
+const fs = require("node:fs");
+const path = require("node:path");
+const vm = require("node:vm");
+
+const VIEWER = process.argv[2] || path.resolve(__dirname, "../../examples/dancing-dog/viewer.html");
+const PASS = '{"test":"t04-turntable","ok":true,"frames":19,"rafLoops":1,"checks":4}';
+
+function fail(reason) {
+  process.stdout.write(JSON.stringify({ test: "t04-turntable", ok: false, reason }) + "\n");
+  process.exit(1);
+}
+
+function emitter() {
+  const listeners = {};
+  return {
+    listeners,
+    addEventListener(type, fn) { (listeners[type] || (listeners[type] = [])).push(fn); },
+    emit(type, ev) { for (const fn of listeners[type] || []) fn(ev); }
+  };
+}
+
+function context2d() {
+  return {
+    imageSmoothingEnabled: true,
+    createImageData(w, h) { return { data: new Uint8ClampedArray(w * h * 4), width: w, height: h }; },
+    getImageData(x, y, w, h) { return { data: new Uint8ClampedArray(w * h * 4), width: w, height: h }; },
+    putImageData() {}, drawImage() {}, clearRect() {}
+  };
+}
+
+function element(id, tag) {
+  return Object.assign(emitter(), {
+    id,
+    tagName: tag || "DIV",
+    style: {},
+    classList: { toggle() {}, add() {}, remove() {} },
+    width: 0, height: 0, value: "", checked: false, textContent: "", files: null,
+    setPointerCapture() {}, releasePointerCapture() {}
+  });
+}
+
+function canvas() {
+  const el = element("", "CANVAS");
+  const ctx = context2d();
+  el.getContext = () => ctx;
+  return el;
+}
+
+async function main() {
+  const html = fs.readFileSync(VIEWER, "utf8");
+  const scriptMatch = html.match(/<script>([\s\S]*?)<\/script>/);
+  if (!scriptMatch) fail("viewer_script_missing");
+  const script = scriptMatch[1];
+
+  const idsMatch = script.match(/const ids = (\[[^\]]*\]);/);
+  const embMatch = script.match(/const EMBEDDED = (\{[\s\S]*?\});/);
+  if (!idsMatch || !embMatch) fail("viewer_shape_missing");
+  const ids = vm.runInNewContext(idsMatch[1]);
+  const payload = JSON.parse(embMatch[1]);
+  if (!(payload.sliceWidth > 0 && payload.sliceHeight > 0 && payload.slices > 0)) fail("viewer_payload_missing");
+
+  const els = {};
+  for (const id of ids) els[id] = id === "view" ? canvas() : element(id);
+  const rafQueue = [];
+  let rafCalls = 0;
+  let nowMs = 0;
+
+  class ImageStub {
+    constructor() {
+      this.width = payload.sliceWidth * payload.slices;
+      this.height = payload.sliceHeight;
+      this.onload = null;
+      this.onerror = null;
+    }
+    set src(value) { this._src = value; if (value && this.onload) this.onload(); }
+    get src() { return this._src; }
+  }
+
+  const sandbox = {
+    console: { log() {}, warn() {}, error() {} },
+    performance: { now: () => nowMs },
+    requestAnimationFrame(cb) { rafCalls++; rafQueue.push(cb); return rafCalls; },
+    document: {
+      title: "",
+      getElementById(id) { return els[id] || (els[id] = element(id)); },
+      createElement(tag) { return tag === "canvas" ? canvas() : element("", String(tag).toUpperCase()); }
+    },
+    window: Object.assign(emitter(), { innerWidth: 800, innerHeight: 600 }),
+    Image: ImageStub,
+    URL: { createObjectURL() { return "blob:stub"; } }
+  };
+  const ctx = vm.createContext(sandbox);
+  try {
+    vm.runInContext(script, ctx, { filename: VIEWER });
+  } catch (e) {
+    fail("viewer_eval_error");
+  }
+  await new Promise(resolve => setImmediate(resolve));
+
+  const angle = () => vm.runInContext("state.angle", ctx);
+  const playing = () => vm.runInContext("state.playing", ctx);
+
+  let frames = 0;
+  function step() {
+    nowMs += 16;
+    const batch = rafQueue.splice(0, rafQueue.length);
+    if (batch.length !== 1) fail("raf_loops");
+    for (const cb of batch) cb(nowMs);
+    if (rafQueue.length !== 1) fail("raf_loops");
+    frames++;
+  }
+
+  // invariant 1: one scheduler owns the turn
+  if (rafQueue.length !== 1) fail("raf_loops");
+
+  // invariant 2: angle advances monotonically at 46 deg/s
+  const start = angle();
+  if (start !== 35) fail("initial_angle");
+  step();
+  const rate = 46 * 0.016;
+  const series = [];
+  for (let i = 0; i < 12; i++) { step(); series.push(angle()); }
+  for (let i = 0; i < series.length; i++) {
+    if (!(series[i] > (i ? series[i - 1] : start))) fail("angle_not_monotonic");
+    if (Math.abs(series[i] - (start + rate * (i + 1))) > 1e-9) fail("angle_rate");
+  }
+
+  // invariant 3: drag offsets from the grabbed angle, no jump
+  const beforeDrag = angle();
+  els.view.emit("pointerdown", { pointerId: 1, clientX: 100, clientY: 100, shiftKey: false, preventDefault() {} });
+  if (playing() !== false) fail("drag_not_pause");
+  els.view.emit("pointermove", { pointerId: 1, clientX: 108, clientY: 100, shiftKey: false, preventDefault() {} });
+  if (Math.abs(angle() - (beforeDrag + 8 * 0.7)) > 1e-9) fail("drag_jump");
+  els.view.emit("pointerup", { pointerId: 1 });
+
+  // invariant 4: paused angle holds, resume continues from same phase
+  const paused = angle();
+  for (let i = 0; i < 3; i++) step();
+  if (Math.abs(angle() - paused) > 1e-9) fail("pause_drift");
+  els.play.emit("click", {});
+  if (playing() !== true) fail("resume_failed");
+  const resumed = angle();
+  for (let i = 0; i < 3; i++) step();
+  if (Math.abs(angle() - (resumed + rate * 3)) > 1e-9) fail("resume_phase_lost");
+
+  if (frames !== 19) fail("frame_count");
+  process.stdout.write(PASS + "\n");
+}
+
+main().catch(() => fail("harness_error"));
