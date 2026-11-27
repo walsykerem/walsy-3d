@@ -79,7 +79,8 @@ fn put(px: &mut [[u8; 4]], w: usize, h: usize, x: i32, y: i32, c: [u8; 4]) {
     }
 }
 
-// Apple: two analytic masks, four tone steps, one-pixel outline.
+// Apple: four analytic primitives, four tone steps, one-pixel outline.
+// Sheet contract carried by walsy-3d; primitives ported with fast-anything and cli-hub.
 const A_C: i32 = 20;
 const A_W: usize = 40;
 const A_H: usize = 40;
@@ -93,8 +94,9 @@ const A_TONES: [[u8; 4]; 4] = [
     [228, 62, 64, 255],
     [255, 128, 108, 255],
 ];
+const A_VIEWS: [&str; 4] = ["TOP", "SIDE", "FRONT", "BACK"];
 
-fn apple_half_width(y: i32) -> f64 {
+pub fn apple_half_width(y: i32) -> f64 {
     let t = (y - A_C) as f64 / 18.0;
     if t.abs() > 1.0 {
         return 0.0;
@@ -102,7 +104,7 @@ fn apple_half_width(y: i32) -> f64 {
     17.0 * (1.0 - t * t).max(0.0).sqrt() * (1.0 + 0.10 * (PI * (t + 0.35)).sin())
 }
 
-fn apple_body(x: i32, y: i32, top: bool) -> bool {
+pub fn apple_body(x: i32, y: i32, top: bool) -> bool {
     if top {
         let dx = (x - A_C) as f64;
         let dy = (y - A_C) as f64;
@@ -114,7 +116,7 @@ fn apple_body(x: i32, y: i32, top: bool) -> bool {
     }
 }
 
-fn apple_tone(x: i32, y: i32, top: bool) -> [u8; 4] {
+pub fn apple_tone(x: i32, y: i32, top: bool) -> [u8; 4] {
     let dx = (x - A_C) as f64 / if top { 18.0 } else { 17.0 };
     let dy = (y - A_C) as f64 / if top { 18.5 } else { 18.0 };
     let lx = dx + 0.32;
@@ -131,53 +133,78 @@ fn apple_tone(x: i32, y: i32, top: bool) -> [u8; 4] {
     }
 }
 
+pub fn apple_outline_cells(body: &[[bool; A_W]; A_H]) -> Vec<(usize, usize)> {
+    let mut cells = Vec::new();
+    for y in 0..A_H as i32 {
+        for x in 0..A_W as i32 {
+            if !body[y as usize][x as usize] {
+                continue;
+            }
+            for dy in -1i32..=1 {
+                for dx in -1i32..=1 {
+                    let nx = x + dx;
+                    let ny = y + dy;
+                    if nx < 0 || ny < 0 || nx >= A_W as i32 || ny >= A_H as i32 {
+                        continue;
+                    }
+                    if !body[ny as usize][nx as usize] {
+                        cells.push((nx as usize, ny as usize));
+                    }
+                }
+            }
+        }
+    }
+    cells.sort_unstable();
+    cells.dedup();
+    cells
+}
+
+pub fn apple_draw_view(view: &str) -> Result<Vec<[u8; 4]>, String> {
+    let index = A_VIEWS
+        .iter()
+        .position(|name| *name == view)
+        .ok_or_else(|| format!("unknown apple view '{view}'"))?;
+    let top = index == 0;
+    let mut px = vec![A_BG; A_W * A_H];
+    let mut body = [[false; A_W]; A_H];
+    for y in 0..A_H as i32 {
+        for x in 0..A_W as i32 {
+            if apple_body(x, y, top) {
+                body[y as usize][x as usize] = true;
+                px[y as usize * A_W + x as usize] = apple_tone(x, y, top);
+            }
+        }
+    }
+    for (x, y) in apple_outline_cells(&body) {
+        put(&mut px, A_W, A_H, x as i32, y as i32, A_OUTLINE);
+    }
+    if top {
+        for y in 18..23 {
+            for x in 18..23 {
+                if (x - A_C) * (x - A_C) + (y - A_C) * (y - A_C) <= 4 {
+                    put(&mut px, A_W, A_H, x, y, A_STEM);
+                }
+            }
+        }
+    } else {
+        for y in 1..9 {
+            for x in 19..22 {
+                put(&mut px, A_W, A_H, x, y, A_STEM);
+            }
+        }
+    }
+    Ok(px)
+}
+
 fn apple_sheet() -> (usize, usize, Vec<[u8; 4]>) {
     let w = 4 * A_W + 3 * A_GAP;
     let mut px = blank(w, A_H, A_BG);
-    for view in 0..4 {
+    for (view, name) in A_VIEWS.iter().enumerate() {
         let ox = (view * (A_W + A_GAP)) as i32;
-        let top = view == 0;
-        let mut body = vec![false; A_W * A_H];
-        for y in 0..A_H as i32 {
-            for x in 0..A_W as i32 {
-                if apple_body(x, y, top) {
-                    body[y as usize * A_W + x as usize] = true;
-                    put(&mut px, w, A_H, ox + x, y, apple_tone(x, y, top));
-                }
-            }
-        }
-        for y in 0..A_H as i32 {
-            for x in 0..A_W as i32 {
-                if !body[y as usize * A_W + x as usize] {
-                    continue;
-                }
-                for dy in -1..=1 {
-                    for dx in -1..=1 {
-                        let nx = x + dx;
-                        let ny = y + dy;
-                        if nx < 0 || ny < 0 || nx >= A_W as i32 || ny >= A_H as i32 {
-                            continue;
-                        }
-                        if !body[ny as usize * A_W + nx as usize] {
-                            put(&mut px, w, A_H, ox + nx, ny, A_OUTLINE);
-                        }
-                    }
-                }
-            }
-        }
-        if top {
-            for y in 18..23 {
-                for x in 18..23 {
-                    if (x - A_C) * (x - A_C) + (y - A_C) * (y - A_C) <= 4 {
-                        put(&mut px, w, A_H, ox + x, y, A_STEM);
-                    }
-                }
-            }
-        } else {
-            for y in 1..9 {
-                for x in 19..22 {
-                    put(&mut px, w, A_H, ox + x, y, A_STEM);
-                }
+        let local = apple_draw_view(name).expect("fixed view name");
+        for y in 0..A_H {
+            for x in 0..A_W {
+                put(&mut px, w, A_H, ox + x as i32, y as i32, local[y * A_W + x]);
             }
         }
     }
