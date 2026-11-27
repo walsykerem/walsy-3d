@@ -27,13 +27,12 @@ fn assert_links() {
     assert!(source.contains(GITHUB), "missing exact label and URL: {GITHUB}");
 }
 
-fn node_ready() -> bool {
+fn node_ready() {
     match Command::new("node").arg("--version").output() {
-        Ok(out) if out.status.success() => true,
+        Ok(out) if out.status.success() => {}
         Ok(out) => panic!("node --version failed: {}", String::from_utf8_lossy(&out.stderr)),
         Err(err) if err.kind() == ErrorKind::NotFound => {
-            eprintln!("BLOCKER: node unavailable; t04-turntable harness not executed");
-            false
+            panic!("BLOCKER: node unavailable; t04-turntable harness not executed");
         }
         Err(err) => panic!("node --version error: {err}"),
     }
@@ -42,9 +41,7 @@ fn node_ready() -> bool {
 #[test]
 fn global_t04_turntable_harness_passes() {
     assert_links();
-    if !node_ready() {
-        return;
-    }
+    node_ready();
     let out = Command::new("node")
         .arg(harness())
         .current_dir(root())
@@ -62,9 +59,7 @@ fn global_t04_turntable_harness_passes() {
 #[test]
 fn global_t04_turntable_duplicate_raf_negative_control_fails() {
     assert_links();
-    if !node_ready() {
-        return;
-    }
+    node_ready();
     let root = root();
     let viewer = root.join("examples/dancing-dog/viewer.html");
     let source = fs::read_to_string(&viewer).expect("shipped viewer readable");
