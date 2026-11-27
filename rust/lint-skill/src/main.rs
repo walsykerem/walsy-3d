@@ -46,10 +46,42 @@ const REQUIRED_TOKENS: &[(&str, &str)] = &[
     ("platform trap", "HiDPI"),
     ("false positive", "false positive"),
     ("lint Cargo.toml", "rust/lint-skill/Cargo.toml"),
+    ("lint source", "rust/lint-skill/src/main.rs"),
+    ("Rust + HTML only", "Rust + HTML only"),
+    ("walsy flag prefix", "--walsy-"),
     ("rotation pivot", "(w - 1) * 0.5"),
     ("Math.round", "Math.round"),
     ("imageSmoothingEnabled", "imageSmoothingEnabled"),
 ];
+
+const DELIVERY_CHECKLIST: &[(&str, &str, &str)] = &[
+    ("1", "Goal + Gate", "## Goal and Gate"),
+    ("2", "No setup-first start", "do not begin with project scaffolding"),
+    ("3", "Fixed artifact chain + filename contract", "### Artifact chain"),
+    ("4", "Clean format/resolution/file-remnant structure", "remove format/resolution/file residue"),
+    ("5", "Keep scope exact for borrowed workflows", "### Keep scope exact"),
+    ("6", "Creator editing boundary", "## Creator editing boundary"),
+    ("7", "Pre-approved frontmatter, tool-surface limit", "disable-model-invocation: true"),
+    ("8", "Negative scope and boundaries at top", "## Negative scope"),
+    ("9", "Observable done-when per step", "## Done when"),
+    ("10", "Early-exit and discount gates", "### Early exit and discount gates"),
+    ("11", "Programmatic output contracts tied to test/verify", "Programmatic output contracts"),
+    ("12", "One-job, high-trigger description", "Build fake-3D rotatable pixel art"),
+    ("13", "Lean body, flexible exploration, no ceremony", "add no ceremonial scaffolding"),
+    ("14", "Platform traps + false positives", "### Traps and false positives"),
+    ("15", "Cheap probes first; approval before expensive work", "### Cheap probes"),
+    ("16", "Trust results, not logs", "Trust results, not logs"),
+    ("17", "Avoid needless re-runs", "re-run a passing gate"),
+    ("18", "Cost and spend visibility", "Cost visibility"),
+    ("19", "Self-auditing lint script inside the skill", "cargo run --offline --quiet --manifest-path rust/lint-skill/Cargo.toml -- check"),
+];
+
+const REQUIRED_HTML_LINKS: &[(&str, &str)] = &[
+    ("my linkedin", "https://www.linkedin.com/in/kerem-urhan-225870436/"),
+    ("github star me", "https://github.com/walsykerem/walsy-3d"),
+];
+
+const GLOBAL_TEST_RULE: &str = "Test dosyalarından mutlaka test et: `tests/global/*.html` ve `rust/*/tests/global_t*.rs` dosyaları `check`/`verify` öncesinde çalıştırılır; negatif kontrol sonucu raporlanır.";
 
 const FRAGMENTS: &[&[&str]] = &[
     &["li", "cense"],
@@ -160,6 +192,91 @@ fn artifact_chain_errors(text: &str) -> Vec<String> {
         }
     }
     out
+}
+
+fn delivery_checklist_errors(text: &str) -> Vec<String> {
+    let Some((s, e)) = section_bounds(text, "## Delivery checklist") else {
+        return vec!["section missing: ## Delivery checklist".to_string()];
+    };
+    let sec = &text[s..e];
+    let mut out = Vec::new();
+    for (num, label, target) in DELIVERY_CHECKLIST {
+        if !sec.lines().any(|line| line.starts_with(&format!("| {num} |"))) {
+            out.push(format!("Delivery checklist row {num} missing ({label})"));
+            continue;
+        }
+        if !sec.contains(label) {
+            out.push(format!("Delivery checklist row {num} label missing: {label}"));
+        }
+        if !text.contains(target) {
+            out.push(format!("Delivery checklist row {num} target missing: {target}"));
+        }
+    }
+    let rows = sec
+        .lines()
+        .filter(|line| {
+            line.starts_with("| ")
+                && line[2..].chars().next().is_some_and(|c| c.is_ascii_digit())
+        })
+        .count();
+    if rows != DELIVERY_CHECKLIST.len() {
+        out.push(format!("Delivery checklist rows {rows} != {}", DELIVERY_CHECKLIST.len()));
+    }
+    out
+}
+
+fn has_html_link(html: &str, label: &str, url: &str) -> bool {
+    let needle = format!("href=\"{url}\"");
+    let mut from = 0;
+    while let Some(i) = html.get(from..).and_then(|s| s.find(&needle)) {
+        let start = from + i;
+        let end = html[start..]
+            .find("</a>")
+            .map(|j| start + j + 4)
+            .unwrap_or(html.len());
+        if html[start..end].contains(&format!(">{label}<")) {
+            return true;
+        }
+        from = start + needle.len();
+        if from >= html.len() {
+            break;
+        }
+    }
+    false
+}
+
+fn missing_html_links(html: &str) -> Vec<&'static str> {
+    REQUIRED_HTML_LINKS
+        .iter()
+        .filter(|(label, url)| !has_html_link(html, label, url))
+        .map(|(_, url)| *url)
+        .collect()
+}
+
+fn html_link_errors(root: &Path, files: &[PathBuf]) -> Vec<String> {
+    let mut out = Vec::new();
+    for path in files
+        .iter()
+        .filter(|p| p.extension() == Some(OsStr::new("html")))
+    {
+        let Ok(html) = fs::read_to_string(path) else {
+            out.push(format!("html unreadable: {}", path.display()));
+            continue;
+        };
+        let rel = path.strip_prefix(root).unwrap_or(path);
+        for url in missing_html_links(&html) {
+            out.push(format!("html link missing in {}: {}", rel.display(), url));
+        }
+    }
+    out
+}
+
+fn global_test_rule_errors(text: &str) -> Vec<String> {
+    if text.contains(GLOBAL_TEST_RULE) {
+        vec![]
+    } else {
+        vec![format!("global test rule sentence missing: {GLOBAL_TEST_RULE}")]
+    }
 }
 
 fn structural_errors(text: &str) -> Vec<String> {
@@ -309,6 +426,8 @@ fn check(override_md: Option<&str>) -> i32 {
         }
     }
     missing.extend(structural_errors(&text));
+    missing.extend(delivery_checklist_errors(&text));
+    missing.extend(global_test_rule_errors(&text));
 
     for (pat, desc) in banned_patterns() {
         if pat.len() < 4 {
@@ -324,6 +443,7 @@ fn check(override_md: Option<&str>) -> i32 {
     if files.iter().any(|p| p.extension() == Some(OsStr::new("py"))) {
         missing.push("forbidden .py file in skill tree".to_string());
     }
+    missing.extend(html_link_errors(&root, &files));
     for path in &files {
         // The linter's own source lists every banned fragment as data.
         if path.file_name() == Some(OsStr::new("SKILL.md"))
@@ -661,5 +781,43 @@ early exit; discount gate; cost visibility; trust results\n";
         assert!(structural_errors(&text)
             .iter()
             .any(|e| e == "missing token: Keep scope exact"));
+    }
+
+    #[test]
+    fn delivery_checklist_requires_all_19_rows() {
+        let mut text = String::from("## Delivery checklist\n\n");
+        for (num, label, target) in DELIVERY_CHECKLIST {
+            text.push_str(&format!("| {num} | {label} | `{target}` |\n"));
+        }
+        assert!(delivery_checklist_errors(&text).is_empty());
+        let text = text.replacen("| 19 |", "| 20 |", 1);
+        assert!(delivery_checklist_errors(&text)
+            .iter()
+            .any(|e| e.contains("row 19")));
+    }
+
+    #[test]
+    fn html_missing_link_fails() {
+        let tmp = std::env::temp_dir().join(format!(
+            "walsy-lint-missing-link-{}.html",
+            std::process::id()
+        ));
+        let html = "<a href=\"https://www.linkedin.com/in/kerem-urhan-225870436/\">my linkedin</a>";
+        fs::write(&tmp, html).expect("write temp html");
+        let content = fs::read_to_string(&tmp).expect("read temp html");
+        let missing = missing_html_links(&content);
+        assert!(
+            missing.contains(&"https://github.com/walsykerem/walsy-3d"),
+            "{missing:?}"
+        );
+        let _ = fs::remove_file(&tmp);
+    }
+
+    #[test]
+    fn global_test_rule_is_required() {
+        let text = format!("## Delivery checklist\n\n{GLOBAL_TEST_RULE}\n");
+        assert!(global_test_rule_errors(&text).is_empty());
+        let text = text.replace(GLOBAL_TEST_RULE, "");
+        assert!(!global_test_rule_errors(&text).is_empty());
     }
 }
