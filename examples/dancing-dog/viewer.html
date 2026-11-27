@@ -12,6 +12,9 @@ main{max-width:880px;margin:0 auto}
 header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 h1{font-size:17px;font-weight:600;margin:0;letter-spacing:.01em}
 #meta{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#6b7480}
+.links{display:flex;gap:12px;white-space:nowrap;margin-left:auto}
+.links a{font-size:12px;color:#4a7f8c;text-decoration:none}
+.links a:hover{text-decoration:underline}
 .stage{display:flex;justify-content:center;overflow:auto;border:1px solid #d7dbe0;border-radius:10px;background:#f7f8f9;padding:8px;transition:background .2s}
 canvas{display:block;image-rendering:crisp-edges;image-rendering:pixelated;touch-action:none;cursor:grab;border-radius:4px}
 canvas.dragging{cursor:grabbing}
@@ -35,6 +38,7 @@ footer{font-size:11px;color:#8b939e;margin-top:8px;line-height:1.5}
 <header>
   <h1 id="title">walsy-3d Turntable</h1>
   <div id="meta">loading…</div>
+  <div class="links"><a href="https://www.linkedin.com/in/kerem-urhan-225870436/" target="_blank" rel="noopener">my linkedin</a><a href="https://github.com/walsykerem/walsy-3d" target="_blank" rel="noopener">github star me</a></div>
 </header>
 <div class="stage" id="stage"><canvas id="view" width="320" height="320" role="img" aria-label="View mode"></canvas></div>
 <div id="readout">loading…</div>
