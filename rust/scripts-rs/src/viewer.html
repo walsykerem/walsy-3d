@@ -323,7 +323,7 @@ function groundPass(px, env, ca, sa, S){
   if (state.shadow){
     const a = env.shadowA;
     for (let z = 0; z < n; z += zs){
-      const off = (z - half) * S;
+      const off = Math.round(z * S) - Math.round(half * S);
       for (let y = vol.h - 1; y >= 0; y -= stepY){
         for (let x = 0; x < w; x += stepX){
           if (!vol.foot[y * w + x]) continue;
@@ -423,7 +423,7 @@ function visibleSlices(){
 function drawSlice(px, z, ca, sa, env, L, S){
   const w = vol.w, h = vol.h, cx = w / 2, cy = h / 2;
   const mid = (vol.n - 1) * 0.5;
-  const off = (z - mid) * S;
+  const off = Math.round(z * S) - Math.round(mid * S);
   const a = ca >= 0 ? Math.max(ca, 0.13) : Math.min(ca, -0.13);
   const invA = 1 / a;
   const ox = artW / 2 + off * sa;
