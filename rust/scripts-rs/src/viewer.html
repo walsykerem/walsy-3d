@@ -12,6 +12,9 @@ main{max-width:880px;margin:0 auto}
 header{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px}
 h1{font-size:17px;font-weight:600;margin:0;letter-spacing:.01em}
 #meta{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;color:#6b7480}
+.links{display:flex;gap:12px;white-space:nowrap;margin-left:auto}
+.links a{font-size:12px;color:#4a7f8c;text-decoration:none}
+.links a:hover{text-decoration:underline}
 .stage{display:flex;justify-content:center;overflow:auto;border:1px solid #d7dbe0;border-radius:10px;background:#f7f8f9;padding:8px;transition:background .2s}
 canvas{display:block;image-rendering:crisp-edges;image-rendering:pixelated;touch-action:none;cursor:grab;border-radius:4px}
 canvas.dragging{cursor:grabbing}
@@ -35,6 +38,7 @@ footer{font-size:11px;color:#8b939e;margin-top:8px;line-height:1.5}
 <header>
   <h1 id="title">walsy-3d Turntable</h1>
   <div id="meta">loading…</div>
+  <div class="links"><a href="https://www.linkedin.com/in/kerem-urhan-225870436/" target="_blank" rel="noopener">my linkedin</a><a href="https://github.com/walsykerem/walsy-3d" target="_blank" rel="noopener">github star me</a></div>
 </header>
 <div class="stage" id="stage"><canvas id="view" width="320" height="320" role="img" aria-label="View mode"></canvas></div>
 <div id="readout">loading…</div>
@@ -74,14 +78,15 @@ footer{font-size:11px;color:#8b939e;margin-top:8px;line-height:1.5}
 <script>
 const EMBEDDED = /*__EMBEDDED_STACK__*/null;
 const DEG = Math.PI / 180;
-const ELEV = 0.3;
+const MIN_SQ = 0.45, MAX_SINP = Math.sqrt(1 - MIN_SQ * MIN_SQ);
+const sinPitch = () => Math.sqrt(Math.max(0, 1 - state.squash * state.squash));
 const clampN = (v, a, b) => v < a ? a : v > b ? b : v;
 const DEFAULTS = {
   angle: 35, squash: 0.75, spacing: 1, scale: 6, slices: 0, // 0 = embedded strip's slice count
   playing: true, time: 40, sun: 315, light: true, shadow: true, outline: true,
   mode: 'stack'
 };
-const state = { ...DEFAULTS, scan: 0, dirty: true, lastMs: 0 };
+const state = { ...DEFAULTS, dirty: true, lastMs: 0 };
 const ids = ['title','meta','readout','play','restart','angle','angleOut','squash','squashOut','spacing','spacingOut','scale','scaleOut','slices','time','timeOut','sun','sunOut','chkLight','chkShadow','chkOutline','mode','file','export','stage','view'];
 const els = {};
 for (const id of ids) els[id] = document.getElementById(id);
@@ -91,6 +96,7 @@ let payloadSlices = 0, sliceW = 0, sliceH = 0, sheetData = null, sheetW = 0;
 let frontPx = null, backPx = null, vol = null, defaultSheet = null;
 let art = null, artCtx = null, artData = null, artW = 0, artH = 0;
 let solid = null, glow = { r: null, g: null, b: null };
+let panX = 0, panY = 0;
 const sil = { front: 0, back: 0 };
 
 const ENVS = [
@@ -236,7 +242,7 @@ function layout(){
     mx = Math.max(mx, halfW * c + (vol.n - 1) * S * s * 0.5);
   }
   const maxHalfW = mx + 6;
-  const maxHalfH = halfH + (vol.n - 1) * S * ELEV * 0.5 + 8;
+  const maxHalfH = halfH + halfW * MAX_SINP + (vol.n - 1) * S * MAX_SINP * 0.5 + 8;
   artW = Math.ceil(maxHalfW * 2) + 4;
   artH = Math.ceil(maxHalfH * 2) + 4;
   art = document.createElement('canvas');
@@ -317,7 +323,7 @@ function groundPass(px, env, ca, sa, S){
   if (state.shadow){
     const a = env.shadowA;
     for (let z = 0; z < n; z += zs){
-      const off = (z - half) * S;
+      const off = Math.round(z * S) - Math.round(half * S);
       for (let y = vol.h - 1; y >= 0; y -= stepY){
         for (let x = 0; x < w; x += stepX){
           if (!vol.foot[y * w + x]) continue;
@@ -362,7 +368,7 @@ function paintGhost(px, img, ca, sa, alpha, offsetY){
   const w = img.width, h = img.height, cx = w / 2, cy = h / 2;
   const a = ca >= 0 ? Math.max(ca, 0.13) : Math.min(ca, -0.13);
   const invA = 1 / a, invSq = 1 / state.squash;
-  const ox = artW / 2, b = sa * ELEV;
+  const ox = artW / 2, b = sa * sinPitch();
   const base = alpha / 255;
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
   for (let c = 0; c < 4; c++){
@@ -394,14 +400,18 @@ function paintGhost(px, img, ca, sa, alpha, offsetY){
   }
 }
 
+function scanIndex(n){
+  return Math.floor((((state.angle % 360) + 360) % 360) * n / 360) % n;
+}
+
 function visibleSlices(){
   const n = vol.n, out = [];
   if (state.mode === 'scan'){
     const half = Math.min(5, Math.max(1, Math.floor(n / 4)));
-    const idx = ((Math.round(state.scan) % n) + n) % n;
+    const idx = scanIndex(n);
     for (let z = idx - half; z <= idx + half; z++) if (z >= 0 && z < n) out.push({ z: z, d: z });
-    const mid = (n - 1) * 0.5;
-    out.sort((p, q) => (p.z - mid) - (q.z - mid));
+    const c = Math.cos(state.angle * DEG);
+    out.sort((p, q) => c >= 0 ? p.z - q.z : q.z - p.z);
   } else {
     for (let z = 0; z < n; z++) out.push({ z: z, d: z });
     const c = Math.cos(state.angle * DEG);
@@ -413,13 +423,13 @@ function visibleSlices(){
 function drawSlice(px, z, ca, sa, env, L, S){
   const w = vol.w, h = vol.h, cx = w / 2, cy = h / 2;
   const mid = (vol.n - 1) * 0.5;
-  const off = (z - mid) * S;
+  const off = Math.round(z * S) - Math.round(mid * S);
   const a = ca >= 0 ? Math.max(ca, 0.13) : Math.min(ca, -0.13);
   const invA = 1 / a;
   const ox = artW / 2 + off * sa;
-  const oy = artH / 2 + off * ca * ELEV;
+  const oy = artH / 2 - off * ca * sinPitch();
   const sq = state.squash, invSq = 1 / sq;
-  const b = sa * ELEV;
+  const b = sa * sinPitch();
   const minX = vol.minX[z], maxX = vol.maxX[z], minY = vol.minY[z], maxY = vol.maxY[z];
   if (maxX < 0) return;
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
@@ -522,7 +532,7 @@ function updateReadout(env){
   const a = ((Math.round(state.angle) % 360) + 360) % 360;
   let s = a + '°';
   if (state.mode === 'scan'){
-    s += ' · slice ' + (((Math.round(state.scan) % vol.n) + vol.n) % vol.n) + '/' + (vol.n - 1) +
+    s += ' · slice ' + scanIndex(vol.n) + '/' + (vol.n - 1) +
       ' · front ' + sil.front + '% · back ' + sil.back + '%';
   } else if (state.mode === 'explode'){
     s += ' · gap ' + spread().toFixed(2) + ' · ' + vol.n + ' slices';
@@ -592,10 +602,6 @@ function walsyTick(now){
     if (keys.right) state.angle = (state.angle + 90 * dt) % 360;
     moved = true;
   }
-  if (state.mode === 'scan' && vol){
-    state.scan = (state.scan + dt * 11) % Math.max(1, vol.n);
-    moved = true;
-  }
   if (moved) state.dirty = true;
   if (state.dirty){
     walsyDrawFrame();
@@ -643,7 +649,9 @@ function restart(){
     backPx = defaultSheet.back;
     els.file.value = '';
   }
-  Object.assign(state, DEFAULTS, { slices: payloadSlices, scan: 0 });
+  Object.assign(state, DEFAULTS, { slices: payloadSlices });
+  panX = panY = 0;
+  view.style.transform = '';
   keys.up = keys.down = keys.left = keys.right = false;
   lastT = 0;
   stopDrag();
@@ -667,6 +675,22 @@ els.scale.addEventListener('input', () => {
   els.scaleOut.textContent = state.scale + 'x';
   resize();
 });
+els.stage.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  const before = state.scale;
+  const after = clampN(before + (e.deltaY < 0 ? 1 : -1), 2, 14);
+  if (after === before) return;
+  const r = view.getBoundingClientRect();
+  const ax = (e.clientX - r.left) / before, ay = (e.clientY - r.top) / before;
+  state.scale = after;
+  resize();
+  const r2 = view.getBoundingClientRect();
+  panX += e.clientX - (r2.left + ax * after);
+  panY += e.clientY - (r2.top + ay * after);
+  view.style.transform = 'translate(' + panX + 'px,' + panY + 'px)';
+  els.scale.value = String(after);
+  els.scaleOut.textContent = after + 'x';
+}, { passive: false });
 els.slices.addEventListener('change', () => {
   state.slices = clampN(parseInt(els.slices.value, 10) || payloadSlices, 1, 256);
   els.slices.value = String(state.slices);
