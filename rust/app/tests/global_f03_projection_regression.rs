@@ -165,6 +165,37 @@ fn intermediate_elevations_keep_layers_separate_without_stripes() {
 }
 
 #[test]
+fn edge_on_keeps_off_center_pixels() {
+    // Opaque pixels only in the top source row, away from the middle row.
+    let vol = Value::Array(
+        (0..N)
+            .map(|z| {
+                Value::Array(
+                    (0..H)
+                        .map(|y| {
+                            Value::Array(
+                                (0..W)
+                                    .map(|_| {
+                                        pixel(if y == 0 { body(z) } else { [0, 0, 0, 0] })
+                                    })
+                                    .collect(),
+                            )
+                        })
+                        .collect(),
+                )
+            })
+            .collect(),
+    );
+    let flat = render(&vol, 0.0, 0.0);
+    for z in 0..N {
+        assert!(
+            !rows_of(&flat, body(z)).is_empty(),
+            "elevation 0: off-center slice {z} disappeared"
+        );
+    }
+}
+
+#[test]
 fn negative_control_zero_spacing_flat_wall_fails() {
     let vol = volume();
     let flat = view(

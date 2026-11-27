@@ -1250,14 +1250,19 @@ fn paint_stack(
         let rise = z as f64 * spacing;
         if squash == 0.0 {
             let py = round_even(base_y as f64 - rise).clamp(0, canvas_h as i64 - 1) as usize;
-            for px in 0..canvas_w {
-                let dx = px as i64 - centre_x;
-                let sx = (dx as f64 * cosine + w as f64 / 2.0).floor() as i64;
-                let sy = (-dx as f64 * sine + h as f64 / 2.0).floor() as i64;
-                if sx >= 0 && sx < w as i64 && sy >= 0 && sy < h as i64 {
-                    let p = vol.at(z, sy as usize, sx as usize);
-                    if p[3] > 0 {
-                        body.paint(py, px, p);
+            // Collapse every source pixel onto the horizontal screen axis.
+            for sy in 0..h {
+                for sx in 0..w {
+                    let p = vol.at(z, sy, sx);
+                    if p[3] == 0 {
+                        continue;
+                    }
+                    let u = sx as f64 + 0.5 - w as f64 / 2.0;
+                    let v = sy as f64 + 0.5 - h as f64 / 2.0;
+                    let dx = u * cosine - v * sine;
+                    let px = centre_x + dx.floor() as i64;
+                    if px >= 0 && px < canvas_w as i64 {
+                        body.paint(py, px as usize, p);
                     }
                 }
             }
