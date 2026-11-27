@@ -40,7 +40,36 @@ fn mismatches(a: &[[u8; 4]], b: &[[u8; 4]]) -> usize {
     a.iter().zip(b).filter(|(x, y)| x != y).count()
 }
 
+fn find_chrome() -> Option<PathBuf> {
+    let mut candidates: Vec<PathBuf> = Vec::new();
+    if let Some(custom) = std::env::var_os("APPLE_CHROME") {
+        candidates.push(PathBuf::from(custom));
+    }
+    candidates.extend(
+        [
+            "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+            "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
+            "C:\\Program Files (x86)\\Google\\Chrome\\Application\\chrome.exe",
+            "google-chrome",
+            "google-chrome-stable",
+            "chromium",
+            "chromium-browser",
+            "chrome",
+        ]
+        .iter()
+        .map(PathBuf::from),
+    );
+    candidates.into_iter().find(|candidate| {
+        Command::new(candidate)
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+    })
+}
+
 fn run_html(root: &Path, control: bool) -> (Value, String) {
+    let chrome = find_chrome().expect("no Chrome/Chromium found; set APPLE_CHROME");
     let source = root.join("tests/global/apple-sheet.html");
     let temp = source.with_file_name(format!(".apple-sheet-control-{}.html", std::process::id()));
     let path = if control {
@@ -55,7 +84,6 @@ fn run_html(root: &Path, control: bool) -> (Value, String) {
     } else {
         source
     };
-    let chrome = "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome";
     let url = format!("file://{}", path.display());
     let output = Command::new(chrome)
         .args([
@@ -140,6 +168,13 @@ fn global_t_apple_html_contract() {
         "https://github.com/walsykerem/walsy-3d",
     ] {
         assert!(html.contains(needle), "harness missing: {needle}");
+    }
+    if find_chrome().is_none() {
+        if std::env::var_os("CI").is_some() {
+            panic!("no Chrome/Chromium found; set APPLE_CHROME (required in CI)");
+        }
+        eprintln!("skipping apple HTML contract: no Chrome/Chromium found (set APPLE_CHROME to run)");
+        return;
     }
     let (pass, pass_json) = run_html(&root, false);
     println!("PASS JSON: {pass_json}");
