@@ -585,7 +585,9 @@ function walsyTick(now){
   if (keys.up || keys.down || keys.left || keys.right){
     if (keys.up || keys.down){
       const e = clampN(state.elev + (keys.up ? 36 : -36) * dt, 0, 90);
-      if (Math.round(e) !== Math.round(state.elev)){ setElevation(e); layout(); sync(); }
+      const shown = Math.round(e) !== Math.round(state.elev);
+      setElevation(e);
+      if (shown){ layout(); sync(); }
     }
     if (keys.left) state.angle = (state.angle - 90 * dt + 360) % 360;
     if (keys.right) state.angle = (state.angle + 90 * dt) % 360;
