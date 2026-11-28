@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>t06 slide-scan simulation</title>
+<!-- my linkedin → https://www.linkedin.com/in/kerem-urhan-225870436/ -->
+<!-- github star me → https://github.com/walsykerem/walsy-3d -->
+<script>
+window.__t06 = { now: 0, raf: null, app: null };
+window.requestAnimationFrame = function (cb) { window.__t06.raf = cb; return 1; };
+performance.now = function () { return window.__t06.now; };
+</script>
+</head>
+<body>
+<pre id="t06-result">pending</pre>
+<script>
+(async function () {
+  const t = window.__t06;
+  const result = {
+    test: 't06-slide-scan',
+    exit: 1,
+    control: typeof window.__t06Rival === 'function',
+    frames: 72,
+    stepDeg: 5,
+    dtMs: 50,
+    slices: 0,
+    scanSequence: [],
+    repeatSequence: [],
+    zoomJumps: 0,
+    modeJumps: 0,
+    violations: []
+  };
+  function fail(message) { result.violations.push(message); }
+  function finish() {
+    if (result.violations.length) result.exit = 1;
+    else result.exit = 0;
+    document.getElementById('t06-result').textContent = JSON.stringify(result);
+    document.title = 't06 exit ' + result.exit;
+  }
+  const sleep = function (ms) { return new Promise(function (resolve) { setTimeout(resolve, ms); }); };
+  const round3 = function (v) { return Number(v.toFixed(3)); };
+  try {
+    const root = new URL('../../', location.href);
+    const viewerUrl = new URL('rust/scripts-rs/src/viewer.html', root).href;
+    const stripUrl = new URL('examples/dancing-dog/slices.png', root).href;
+    const responses = await Promise.all([fetch(viewerUrl), fetch(stripUrl)]);
+    if (!responses[0].ok || !responses[1].ok) throw new Error('shipped asset fetch failed');
+    const template = await responses[0].text();
+    const bytes = new Uint8Array(await responses[1].arrayBuffer());
+    let binary = '';
+    for (let i = 0; i < bytes.length; i++) binary += String.fromCharCode(bytes[i]);
+    const sheet = 'data:image/png;base64,' + btoa(binary);
+    const marker = '/*__EMBEDDED_STACK__*/null';
+    if (template.indexOf(marker) < 0) throw new Error('viewer payload marker missing');
+    const payload = {
+      title: 't06', slices: 36, sliceWidth: 30, sliceHeight: 65,
+      sheet: sheet, top: '', side: '', front: '', back: ''
+    };
+    const scriptOpen = template.indexOf('<script>');
+    const scriptClose = template.indexOf('<' + '/script>', scriptOpen);
+    const bodyOpen = template.indexOf('<body>');
+    if (scriptOpen < 0 || scriptClose < 0 || bodyOpen < 0) throw new Error('viewer structure missing');
+    const markup = template.slice(bodyOpen + 6, scriptOpen);
+    const viewerScript = template.slice(scriptOpen + 8, scriptClose).replace(marker, JSON.stringify(payload)) +
+      '\nwindow.__t06.app = { state: state, els: els, visibleSlices: visibleSlices, tick: walsyTick,' +
+      ' getVol: function () { return vol; }, setLastT: function (v) { lastT = v; } };';
+    document.body.insertAdjacentHTML('afterbegin', markup);
+    const script = document.createElement('script');
+    script.textContent = viewerScript;
+    document.body.appendChild(script);
+    for (let i = 0; i < 400 && !(t.app && t.app.getVol() && t.app.getVol().n > 0); i++) await sleep(5);
+    if (!t.app || !t.app.getVol() || !t.app.getVol().n) throw new Error('viewer volume not ready');
+    const app = t.app;
+    const n = app.getVol().n;
+    result.slices = n;
+
+    let rivalTimer = null;
+    if (result.control) rivalTimer = setInterval(window.__t06Rival, 1);
+
+    async function runPass(events) {
+      app.state.mode = 'scan';
+      app.state.playing = false;
+      app.state.angle = 0;
+      app.state.scan = 0;
+      const seq = [];
+      for (let i = 0; i < result.frames; i++) {
+        app.state.angle = i * result.stepDeg;
+        const now = 100 + i * result.dtMs;
+        app.setLastT(now - result.dtMs);
+        t.now = now;
+        t.raf(now);
+        await sleep(1);
+        if (events && i === 17) {
+          const before = app.state.scan;
+          app.els.scale.value = '9';
+          app.els.scale.dispatchEvent(new Event('input', { bubbles: true }));
+          if (app.state.scan !== before) result.zoomJumps++;
+        }
+        if (events && i === 41) {
+          const before = app.state.scan;
+          app.els.mode.value = 'explode';
+          app.els.mode.dispatchEvent(new Event('change', { bubbles: true }));
+          app.els.mode.value = 'scan';
+          app.els.mode.dispatchEvent(new Event('change', { bubbles: true }));
+          if (app.state.scan !== before) result.modeJumps++;
+        }
+        seq.push(round3(app.state.scan));
+      }
+      return seq;
+    }
+
+    result.scanSequence = await runPass(true);
+    result.repeatSequence = await runPass(true);
+    if (rivalTimer !== null) clearInterval(rivalTimer);
+
+    for (let i = 0; i < result.scanSequence.length; i++) {
+      const expected = round3(((i + 1) * result.dtMs / 1000 * 11) % n);
+      if (result.scanSequence[i] !== expected) {
+        fail('frame ' + i + ' scan ' + result.scanSequence[i] + ' expected ' + expected);
+        break;
+      }
+    }
+    if (JSON.stringify(result.scanSequence) !== JSON.stringify(result.repeatSequence)) fail('repeat mismatch');
+    if (result.zoomJumps !== 0) fail('zoom changed scan');
+    if (result.modeJumps !== 0) fail('mode slide changed scan');
+    if (result.frames * result.stepDeg !== 360) fail('angle sweep is not a full turn');
+
+    let backwards = 0;
+    for (let i = 1; i < result.scanSequence.length; i++) {
+      const d = result.scanSequence[i] - result.scanSequence[i - 1];
+      if (d >= 0) continue;
+      if (result.scanSequence[i - 1] > n - 2 && result.scanSequence[i] < 1) continue;
+      backwards++;
+    }
+    if (backwards) fail('non-monotonic ' + backwards + ' backward steps');
+    result.backwardSteps = backwards;
+    result.rivalTicks = window.__t06RivalTicks || 0;
+  } catch (err) {
+    fail('harness error: ' + (err && err.message ? err.message : String(err)));
+  }
+  finish();
+})();
+</script>
+</body>
+</html>
