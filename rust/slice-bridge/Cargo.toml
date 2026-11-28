@@ -1,0 +1,21 @@
+# Opt-in packed-alpha-run bridge crate.
+[package]
+name = "fa_scripts_views_to_slices_py_thin_runs"
+version = "0.1.0"
+edition = "2024"
+publish = false
+
+[lib]
+name = "fa_scripts_views_to_slices_py_thin_runs"
+crate-type = ["cdylib"]
+
+[dependencies]
+pyo3 = { version = "0.30", features = ["extension-module", "abi3-py310"] }
+
+[profile.release]
+opt-level = 3
+lto = "fat"
+codegen-units = 1
+
+# A crate of its own, even inside another Cargo workspace.
+[workspace]
