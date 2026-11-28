@@ -51,10 +51,8 @@ footer{font-size:11px;color:#8b939e;margin-top:8px;line-height:1.5}
   <div class="ctl"><button id="restart" type="button" title="Restore default controls">Restart</button></div>
   <label>Angle <span class="out" id="angleOut">35°</span>
     <input id="angle" type="range" min="0" max="360" step="1" value="35"></label>
-  <label>Squash <span class="out" id="squashOut">0.75</span>
-    <input id="squash" type="range" min="0.45" max="1" step="0.01" value="0.75"></label>
-  <label>Spacing <span class="out" id="spacingOut">1.00</span>
-    <input id="spacing" type="range" min="0" max="4" step="0.05" value="1"></label>
+  <label>Elevation <span class="out" id="elevOut">49°</span>
+    <input id="elev" type="range" min="0" max="90" step="1" value="49"></label>
   <label>Scale <span class="out" id="scaleOut">6x</span>
     <input id="scale" type="range" min="2" max="14" step="1" value="6"></label>
   <label>Slices
@@ -77,7 +75,7 @@ footer{font-size:11px;color:#8b939e;margin-top:8px;line-height:1.5}
   <label>Sheet <input id="file" type="file" accept="image/png,image/webp"></label>
   <div class="ctl"><button id="export" type="button">Export 16 angles</button></div>
 </div>
-<footer id="hint">drag to rotate · shift+drag for sun · vertical drag squashes · Space pause · W/A/S/D nudge</footer>
+<footer id="hint">drag to rotate · shift+drag for sun · vertical drag tilts · Space pause · W/A/S/D nudge</footer>
 </main>
 <script>
 const EMBEDDED = {
@@ -92,14 +90,21 @@ const EMBEDDED = {
   "back": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAB4AAAAkCAYAAACe0YppAAAAr0lEQVR4nGP8/PAkA7FAwyroP4hel6CCVT5owR0wfePYOkZCZjExDBAYtXg0qGkGGKWlpcFZZMSkahYY44ycFl0sNHl0DUyP5mO6gZGXneCpGgZwVXmUAliVOXiCmlY+xeXz0XxMNzAa1HQDI68hwAjrScB6CTCAr0BBL/5IUQvrZbCgC6A7gFoAvVszmp0Grj7GlSjwAVLUDp52NTq4cWwdTk0aVkFkq2WAgpGXqgEz9jSwq6x8fgAAAABJRU5ErkJggg=="
 };
 const DEG = Math.PI / 180;
+const SCAN_MS = 90;
 const clampN = (v, a, b) => v < a ? a : v > b ? b : v;
+// Orthographic elevation: slice planes foreshorten by sin, layer separation by cos.
+const camAt = (deg) => ({ squash: Math.max(0.05, Math.sin(deg * DEG)), spacing: Math.cos(deg * DEG) });
+const setElevation = (deg) => {
+  state.elev = clampN(deg, 0, 90);
+  Object.assign(state, camAt(state.elev));
+};
 const DEFAULTS = {
-  angle: 35, squash: 0.75, spacing: 1, scale: 6, slices: 0, // 0 = embedded strip's slice count
+  angle: 35, elev: 49, ...camAt(49), scale: 6, slices: 0, // 0 = embedded strip's slice count
   playing: true, time: 40, sun: 315, light: true, shadow: true, outline: true,
   mode: 'stack', shear: 0.1
 };
-const state = { ...DEFAULTS, scan: 0, dirty: true, lastMs: 0 };
-const ids = ['title','meta','readout','play','restart','angle','angleOut','squash','squashOut','spacing','spacingOut','scale','scaleOut','slices','time','timeOut','sun','sunOut','chkLight','chkShadow','chkOutline','mode','file','export','stage','view'];
+const state = { ...DEFAULTS, scan: 0, scanT: 0, dirty: true, lastMs: 0, zoom: 1, cx: 0, cy: 0 };
+const ids = ['title','meta','readout','play','restart','angle','angleOut','elev','elevOut','scale','scaleOut','slices','time','timeOut','sun','sunOut','chkLight','chkShadow','chkOutline','mode','file','export','stage','view'];
 const els = {};
 for (const id of ids) els[id] = document.getElementById(id);
 const view = els.view, ctx = view.getContext('2d');
@@ -253,6 +258,8 @@ function layout(){
   artData = artCtx.createImageData(artW, artH);
   solid = new Uint8Array(artW * artH);
   glow = { r: new Float32Array(artW * artH), g: new Float32Array(artW * artH), b: new Float32Array(artW * artH) };
+  state.cx = artW / 2;
+  state.cy = artH / 2;
   resize();
   state.dirty = true;
 }
@@ -397,7 +404,7 @@ function visibleSlices(){
   const n = vol.n, out = [];
   if (state.mode === 'scan'){
     const half = Math.min(6, Math.max(1, Math.floor(n / 4)));
-    const idx = ((Math.round(state.scan) % n) + n) % n;
+    const idx = ((state.scan % n) + n) % n;
     for (let z = Math.max(0, idx - half); z <= Math.min(n - 1, idx + half); z++) out.push(z);
   } else {
     for (let z = 0; z < n; z++) out.push(z);
@@ -407,10 +414,11 @@ function visibleSlices(){
 
 function drawSlice(px, z, ca, sa, env, L){
   const w = vol.w, h = vol.h, cx = w / 2, cy = h / 2;
-  const lift = z * state.spacing * (state.mode === 'explode' ? 2.2 : 1);
-  const xc = xCenter + state.shear * lift;
-  const yc = baseY - lift;
   const sq = state.squash;
+  const lift = z * state.spacing * (state.mode === 'explode' ? 2.2 : 1);
+  const elev = Math.round(lift); // whole-pixel layer gap: no sub-pixel shimmer
+  const xc = xCenter + state.shear * elev;
+  const yc = baseY - elev;
   const minX = vol.minX[z], maxX = vol.maxX[z], minY = vol.minY[z], maxY = vol.maxY[z];
   if (maxX < 0) return;
   let x0 = 1e9, x1 = -1e9, y0 = 1e9, y1 = -1e9;
@@ -514,13 +522,13 @@ function updateReadout(env){
   const a = ((Math.round(state.angle) % 360) + 360) % 360;
   let s = a + '°';
   if (state.mode === 'scan'){
-    s += ' · slice ' + (((Math.round(state.scan) % vol.n) + vol.n) % vol.n) + '/' + (vol.n - 1) +
+    s += ' · slice ' + (((state.scan % vol.n) + vol.n) % vol.n) + '/' + (vol.n - 1) +
       ' · front ' + sil.front + '% · back ' + sil.back + '%';
   } else if (state.mode === 'explode'){
     s += ' · gap ' + (state.spacing * 2.2).toFixed(2) + ' · ' + vol.n + ' slices · height ' +
       Math.round((vol.n - 1) * state.spacing * 2.2) + 'px';
   } else {
-    s += ' · squash ' + state.squash.toFixed(2) + ' · spacing ' + state.spacing.toFixed(2) +
+    s += ' · elev ' + Math.round(state.elev) + '° · squash ' + state.squash.toFixed(2) + ' · spacing ' + state.spacing.toFixed(2) +
       ' · sun ' + (Math.round(state.sun) % 360) + '°';
   }
   s += ' · ' + env.name + ' · ' + state.lastMs.toFixed(1) + ' ms';
@@ -546,8 +554,12 @@ function walsyDrawFrame(){
   bloom(px);
   if (state.outline) outlinePass(px, env);
   artCtx.putImageData(artData, 0, 0);
+  const s = view.width / artW;
+  const k = s * state.zoom;
   ctx.clearRect(0, 0, view.width, view.height);
-  ctx.drawImage(art, 0, 0, artW, artH, 0, 0, view.width, view.height);
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(art, 0, 0, artW, artH,
+    view.width / 2 - state.cx * k, view.height / 2 - state.cy * k, artW * k, artH * k);
   els.stage.style.background = 'rgb(' + (env.bg[0] | 0) + ',' + (env.bg[1] | 0) + ',' + (env.bg[2] | 0) + ')';
   state.lastMs = performance.now() - t0;
   updateReadout(env);
@@ -571,15 +583,21 @@ function walsyTick(now){
     moved = true;
   }
   if (keys.up || keys.down || keys.left || keys.right){
-    if (keys.up) state.squash = clampN(state.squash + 0.9 * dt, 0.45, 1);
-    if (keys.down) state.squash = clampN(state.squash - 0.9 * dt, 0.45, 1);
+    if (keys.up || keys.down){
+      const e = clampN(state.elev + (keys.up ? 36 : -36) * dt, 0, 90);
+      if (Math.round(e) !== Math.round(state.elev)){ setElevation(e); layout(); sync(); }
+    }
     if (keys.left) state.angle = (state.angle - 90 * dt + 360) % 360;
     if (keys.right) state.angle = (state.angle + 90 * dt) % 360;
     moved = true;
   }
   if (state.mode === 'scan' && vol){
-    state.scan = (state.scan + dt * 11) % Math.max(1, vol.n);
-    moved = true;
+    state.scanT += dt * 1000;
+    while (state.scanT >= SCAN_MS){
+      state.scanT -= SCAN_MS;
+      state.scan = (state.scan + 1) % vol.n;
+      moved = true;
+    }
   }
   if (moved) state.dirty = true;
   if (state.dirty){
@@ -592,10 +610,8 @@ function walsyTick(now){
 function sync(){
   els.angle.value = String(((Math.round(state.angle) % 360) + 360) % 360);
   els.angleOut.textContent = (((Math.round(state.angle) % 360) + 360) % 360) + '°';
-  els.squash.value = state.squash.toFixed(2);
-  els.squashOut.textContent = state.squash.toFixed(2);
-  els.spacing.value = state.spacing.toFixed(2);
-  els.spacingOut.textContent = state.spacing.toFixed(2);
+  els.elev.value = String(Math.round(state.elev));
+  els.elevOut.textContent = Math.round(state.elev) + '°';
   els.scale.value = String(state.scale);
   els.scaleOut.textContent = state.scale + 'x';
   els.slices.value = String(state.slices);
@@ -627,7 +643,7 @@ function restart(){
     backPx = defaultSheet.back;
     els.file.value = '';
   }
-  Object.assign(state, DEFAULTS, { slices: payloadSlices, scan: 0 });
+  Object.assign(state, DEFAULTS, { slices: payloadSlices, scan: 0, scanT: 0, zoom: 1 });
   keys.up = keys.down = keys.left = keys.right = false;
   lastT = 0;
   stopDrag();
@@ -640,10 +656,9 @@ function restart(){
 els.play.addEventListener('click', togglePlay);
 els.restart.addEventListener('click', restart);
 els.angle.addEventListener('input', () => { state.angle = Number(els.angle.value); els.angleOut.textContent = Math.round(state.angle) + '°'; state.dirty = true; });
-els.squash.addEventListener('input', () => { state.squash = Number(els.squash.value); els.squashOut.textContent = Number(els.squash.value).toFixed(2); state.dirty = true; });
-els.spacing.addEventListener('input', () => {
-  state.spacing = Number(els.spacing.value);
-  els.spacingOut.textContent = Number(els.spacing.value).toFixed(2);
+els.elev.addEventListener('input', () => {
+  setElevation(Number(els.elev.value));
+  sync();
   layout();
 });
 els.scale.addEventListener('input', () => {
@@ -730,7 +745,7 @@ function stopDrag(){
 view.addEventListener('pointerdown', (e) => {
   state.playing = false;
   sync();
-  drag = { id: e.pointerId, x: e.clientX, y: e.clientY, angle: state.angle, sun: state.sun, squash: state.squash, shift: e.shiftKey };
+  drag = { id: e.pointerId, x: e.clientX, y: e.clientY, angle: state.angle, sun: state.sun, elev: state.elev, shift: e.shiftKey };
   view.setPointerCapture(e.pointerId);
   view.classList.add('dragging');
   e.preventDefault();
@@ -744,13 +759,31 @@ view.addEventListener('pointermove', (e) => {
   } else {
     state.angle = ((drag.angle + dx * 0.7) % 360 + 360) % 360;
   }
-  state.squash = clampN(drag.squash - dy * 0.004, 0.45, 1);
+  const elevNext = clampN(drag.elev - dy * 0.3, 0, 90);
+  if (Math.round(elevNext) !== Math.round(state.elev)){ setElevation(elevNext); layout(); }
   sync();
   state.dirty = true;
 });
 view.addEventListener('pointerup', stopDrag);
 view.addEventListener('pointercancel', stopDrag);
 view.addEventListener('lostpointercapture', stopDrag);
+
+// Zoom keeps the art point under the pointer fixed (so zooming at the sword stays at the sword).
+view.addEventListener('wheel', (e) => {
+  if (!artData) return;
+  e.preventDefault();
+  const r = view.getBoundingClientRect();
+  const px = (e.clientX - r.left) * view.width / r.width;
+  const py = (e.clientY - r.top) * view.height / r.height;
+  const k0 = (view.width / artW) * state.zoom;
+  const ax = (px - view.width / 2) / k0 + state.cx;
+  const ay = (py - view.height / 2) / k0 + state.cy;
+  state.zoom = clampN(state.zoom * Math.exp(-e.deltaY * 0.0015), 0.5, 8);
+  const k1 = (view.width / artW) * state.zoom;
+  state.cx = ax + (view.width / 2 - px) / k1;
+  state.cy = ay + (view.height / 2 - py) / k1;
+  state.dirty = true;
+}, { passive: false });
 
 function typing(e){
   const t = e.target;
@@ -824,8 +857,6 @@ requestAnimationFrame(walsyTick);
     if (!dancing) return;
     const t = (now - start) / 1000;
     state.angle = ((90 * Math.sin(t * 1.4) + 10 * Math.sin(t * 5.6)) % 360 + 360) % 360;
-    state.squash = 0.75 + 0.09 * Math.sin(t * 4.2);
-    state.spacing = 1 + 0.05 * Math.sin(t * 2.8);
     state.dirty = true;
     requestAnimationFrame(dance);
   }
