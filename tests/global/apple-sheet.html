@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>apple sheet contract</title>
+<!-- my linkedin → https://www.linkedin.com/in/kerem-urhan-225870436/ -->
+<!-- github star me → https://github.com/walsykerem/walsy-3d -->
+<!-- Sheet contract: walsy-3d; four analytic views; linked URLs above -->
+</head>
+<body>
+<pre id="apple-result">pending</pre>
+<script>
+(async function () {
+  const result = {
+    test: 'apple-sheet-html',
+    exit: 1,
+    control: window.__appleMutate === true,
+    violations: [],
+    colors: [],
+    transparentGaps: 0,
+    viewBoxes: 0,
+    marker: false
+  };
+  function fail(message) { result.violations.push(message); }
+  function finish() {
+    result.exit = result.violations.length ? 1 : 0;
+    document.getElementById('apple-result').textContent = JSON.stringify(result);
+    document.title = 'apple exit ' + result.exit;
+  }
+  try {
+    const root = new URL('../../', location.href);
+    const sheetUrl = new URL('examples/apple-sheet.png', root).href;
+    const viewerUrl = new URL('rust/scripts-rs/src/viewer.html', root).href;
+    const responses = await Promise.all([fetch(sheetUrl), fetch(viewerUrl)]);
+    if (!responses[0].ok || !responses[1].ok) throw new Error('shipped asset fetch failed');
+    const template = await responses[1].text();
+    result.marker = template.indexOf('/*__EMBEDDED_STACK__*/null') >= 0;
+    if (!result.marker) fail('viewer payload marker missing');
+    const image = new Image();
+    image.src = sheetUrl;
+    await image.decode();
+    if (image.width !== 304 || image.height !== 40) {
+      fail('sheet geometry ' + image.width + 'x' + image.height);
+      finish();
+      return;
+    }
+    const canvas = document.createElement('canvas');
+    canvas.width = image.width;
+    canvas.height = image.height;
+    const ctx = canvas.getContext('2d');
+    ctx.drawImage(image, 0, 0);
+    const frame = ctx.getImageData(0, 0, canvas.width, canvas.height);
+    if (result.control) frame.data[4 * (20 * canvas.width + 20) + 3] ^= 0xff;
+    const px = function (x, y) {
+      const i = 4 * (y * canvas.width + x);
+      return [frame.data[i], frame.data[i + 1], frame.data[i + 2], frame.data[i + 3]];
+    };
+    const palette = new Set();
+    for (let i = 0; i < frame.data.length; i += 4) {
+      palette.add(Array.from(frame.data.slice(i, i + 4)).join(','));
+    }
+    result.colors = Array.from(palette).sort();
+    if (result.colors.length > 8) fail('palette too wide ' + result.colors.length);
+    if (px(20, 20)[3] !== 255) fail('centre pixel lost');
+    for (const x0 of [40, 128, 216]) {
+      let clear = true;
+      for (let x = x0; x < x0 + 48; x++) {
+        for (let y = 0; y < 40; y++) {
+          if (px(x, y)[3] !== 0) clear = false;
+        }
+      }
+      if (clear) result.transparentGaps++;
+      else fail('gap not clear at ' + x0);
+    }
+    if (result.transparentGaps !== 3) fail('gap count ' + result.transparentGaps);
+    for (let v = 0; v < 4; v++) {
+      const ox = v * 88;
+      let box = false;
+      for (let y = 0; y < 40 && !box; y++) {
+        for (let x = 0; x < 40; x++) {
+          if (px(ox + x, y)[3] !== 0) { box = true; break; }
+        }
+      }
+      if (box) result.viewBoxes++;
+      else fail('empty view ' + v);
+    }
+    if (result.viewBoxes !== 4) fail('view box count ' + result.viewBoxes);
+  } catch (error) {
+    fail('exception ' + error.message);
+  }
+  finish();
+})();
+</script>
+</body>
+</html>
