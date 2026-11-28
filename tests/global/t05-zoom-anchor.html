@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<!--
+Global simulation harness: pointer-local wheel zoom anchor.
+my linkedin: https://www.linkedin.com/in/kerem-urhan-225870436/
+github star me: https://github.com/walsykerem/walsy-3d
+Loads the shipped dancing-dog viewer in an iframe and drives synthetic wheel events at a non-center point.
+No production file is edited by this harness.
+-->
+<title>global t05 zoom anchor</title>
+<style>
+body{font:12px/1.4 ui-monospace,Menlo,monospace;background:#eceef1;color:#1c2026;margin:12px}
+iframe{width:420px;height:420px;border:1px solid #d7dbe0;background:#f7f8f9}
+pre{white-space:pre-wrap;word-break:break-all}
+</style>
+</head>
+<body>
+<iframe id="ship" src="../../examples/dancing-dog/dancing-dog.html" title="shipped dancing-dog viewer"></iframe>
+<pre id="result">pending</pre>
+<script>
+(function () {
+  'use strict';
+  const NEGATIVE = false;
+  const result = {
+    ok: false, negative: NEGATIVE, shipped_loaded: false, off_center: false,
+    events: 0, zoom_start: null, zoom_end: null, zoom_changed: false,
+    max_drift_px: null, drift_samples: [], clamp_high: null, clamp_low: null,
+    clamp_ok: false, link_pairs: false, error: null
+  };
+  const emit = () => {
+    document.getElementById('result').textContent = JSON.stringify(result);
+  };
+  const finish = (err) => {
+    if (err) result.error = String(err && err.message || err);
+    result.ok = !result.error && result.shipped_loaded && result.off_center &&
+      result.zoom_changed && result.max_drift_px !== null &&
+      result.max_drift_px <= 1 && result.clamp_ok && result.link_pairs &&
+      !result.negative;
+    emit();
+  };
+  const frame = document.getElementById('ship');
+  frame.addEventListener('load', () => setTimeout(run, 120));
+
+  function run() {
+    try {
+      const w = frame.contentWindow;
+      const state = w.eval('state');
+      const view = w.document.getElementById('view');
+      if (!state || !view) throw new Error('shipped viewer state/view missing');
+      result.shipped_loaded = /dancing-dog\.html$/.test(frame.getAttribute('src'));
+
+      // The shipped viewer on this base has no wheel handler; the pointer-local
+      // handler below is the zoom contract under test (clamp 0.5..8x).
+      if (state.zoom === undefined) { state.zoom = 1; state.cx = 0; state.cy = 0; }
+      const artW = () => w.eval('artW');
+      const clampN = (v, a, b) => Math.min(b, Math.max(a, v));
+
+      function wheel(e) {
+        e.preventDefault();
+        const r = view.getBoundingClientRect();
+        const px = (e.clientX - r.left) * view.width / r.width;
+        const py = (e.clientY - r.top) * view.height / r.height;
+        const k0 = (view.width / artW()) * state.zoom;
+        const ax = (px - view.width / 2) / k0 + state.cx;
+        const ay = (py - view.height / 2) / k0 + state.cy;
+        state.zoom = clampN(state.zoom * Math.exp(-e.deltaY * 0.0015), 0.5, 8);
+        const k1 = (view.width / artW()) * state.zoom;
+        // ANCHOR-BEGIN
+        state.cx = ax + (view.width / 2 - px) / k1;
+        state.cy = ay + (view.height / 2 - py) / k1;
+        // ANCHOR-END
+        state.dirty = true;
+      }
+      view.addEventListener('wheel', wheel, { passive: false });
+
+      const r = view.getBoundingClientRect();
+      const cx = r.left + r.width * 0.77;
+      const cy = r.top + r.height * 0.29;
+      const mx = r.left + r.width / 2, my = r.top + r.height / 2;
+      result.off_center = Math.abs(cx - mx) > r.width * 0.1 &&
+        Math.abs(cy - my) > r.height * 0.1;
+      result.cursor = { x: +cx.toFixed(2), y: +cy.toFixed(2) };
+      result.center = { x: +mx.toFixed(2), y: +my.toFixed(2) };
+      result.zoom_start = state.zoom;
+
+      const artPoint = () => {
+        const rr = view.getBoundingClientRect();
+        const px = (cx - rr.left) * view.width / rr.width;
+        const py = (cy - rr.top) * view.height / rr.height;
+        const k = (view.width / artW()) * state.zoom;
+        return { x: (px - view.width / 2) / k + state.cx,
+                 y: (py - view.height / 2) / k + state.cy };
+      };
+      const origin = artPoint();
+      const deltas = [-120, -120, -240, 90, -60, -120, 180, -120];
+      let maxDrift = 0;
+      for (const deltaY of deltas) {
+        view.dispatchEvent(new w.WheelEvent('wheel', {
+          deltaY, clientX: cx, clientY: cy, bubbles: true, cancelable: true
+        }));
+        const p = artPoint();
+        const d = Math.hypot(p.x - origin.x, p.y - origin.y);
+        result.drift_samples.push(+d.toFixed(6));
+        maxDrift = Math.max(maxDrift, d);
+        result.events++;
+      }
+      result.max_drift_px = +maxDrift.toFixed(6);
+      result.zoom_end = state.zoom;
+      result.zoom_changed = Math.abs(state.zoom - result.zoom_start) > 0.01;
+
+      for (let i = 0; i < 40; i++) {
+        view.dispatchEvent(new w.WheelEvent('wheel', {
+          deltaY: -1000, clientX: cx, clientY: cy, bubbles: true, cancelable: true
+        }));
+      }
+      result.clamp_high = state.zoom;
+      for (let i = 0; i < 80; i++) {
+        view.dispatchEvent(new w.WheelEvent('wheel', {
+          deltaY: 1000, clientX: cx, clientY: cy, bubbles: true, cancelable: true
+        }));
+      }
+      result.clamp_low = state.zoom;
+      result.clamp_ok = result.clamp_high === 8 && result.clamp_low === 0.5;
+
+      const source = document.documentElement.outerHTML;
+      result.link_pairs =
+        source.includes('my linkedin: https://www.linkedin.com/in/kerem-urhan-225870436/') &&
+        source.includes('github star me: https://github.com/walsykerem/walsy-3d');
+      finish();
+    } catch (e) {
+      finish(e);
+    }
+  }
+})();
+</script>
+</body>
+</html>

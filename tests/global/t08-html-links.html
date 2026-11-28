@@ -1,0 +1,68 @@
+<!-- t08 global HTML link coverage harness — self-running inline JS, executed by Node as CommonJS -->
+<!-- my linkedin → https://www.linkedin.com/in/kerem-urhan-225870436/ -->
+<!-- github star me → https://github.com/walsykerem/walsy-3d -->
+"use strict";
+const fs = require("node:fs");
+const os = require("node:os");
+const path = require("node:path");
+
+const ROOT = path.resolve(__dirname, "../..");
+const TEMPLATE = path.join(ROOT, "rust/scripts-rs/src/viewer.html");
+const PAIRS = [
+  ["my linkedin", "https://www.linkedin.com/in/kerem-urhan-225870436/"],
+  ["github star me", "https://github.com/walsykerem/walsy-3d"]
+];
+const MARKER = "/*__EMBEDDED_STACK__*/null";
+
+function fail(reason) {
+  process.stdout.write(JSON.stringify({ test: "t08-html-links", ok: false, reason }) + "\n");
+  process.exit(1);
+}
+
+function walk(dir, out) {
+  for (const ent of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (ent.name.startsWith(".") || ent.name === "target" || ent.name === "node_modules") continue;
+    const p = path.join(dir, ent.name);
+    if (ent.isDirectory()) walk(p, out);
+    else if (ent.isFile() && p.endsWith(".html")) out.push(p);
+  }
+}
+
+function check(file, text) {
+  for (const [label, url] of PAIRS) {
+    if (!text.includes(label + " → " + url)) return file + ": missing " + url + " for " + label;
+  }
+  return null;
+}
+
+const files = [];
+walk(ROOT, files);
+files.sort();
+if (!files.length) fail("no_html_found");
+for (const file of files) {
+  const error = check(file, fs.readFileSync(file, "utf8"));
+  if (error) fail(error);
+}
+
+const template = fs.readFileSync(TEMPLATE, "utf8");
+if (!template.includes(MARKER)) fail(TEMPLATE + ": payload marker changed");
+for (const [label, url] of PAIRS) {
+  if (!template.includes(label + " → " + url)) fail(TEMPLATE + ": missing " + url + " for " + label);
+}
+
+const tmp = path.join(os.tmpdir(), "walsy-t08-" + process.pid + "-" + Date.now() + ".html");
+fs.writeFileSync(tmp, "<!-- " + PAIRS[0][0] + " → " + PAIRS[0][1] + " -->");
+const negative = check(tmp, fs.readFileSync(tmp, "utf8"));
+fs.unlinkSync(tmp);
+if (!negative || !negative.includes(tmp) || !negative.includes(PAIRS[1][1])) {
+  fail("negative_control_did_not_report_path_and_missing_url");
+}
+
+process.stdout.write(JSON.stringify({
+  test: "t08-html-links",
+  ok: true,
+  files: files.length,
+  pairs: PAIRS.length,
+  marker: true,
+  negativeControl: negative
+}) + "\n");
