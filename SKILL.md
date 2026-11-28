@@ -53,6 +53,34 @@ Before any build, generation or export, run these gates in order; a failure stop
 
 HiDPI backing size ≠ CSS size; Godot viewport stretch; Unity Pixels Per Unit; flat white vs transparent background; JPEG fringe. Check these before trusting pixels. Never re-run a passing gate "to be sure" — trust results, not logs.
 
+## Delivery checklist
+
+All 19 items mandatory. `rust/lint-skill/src/main.rs` audits this table via `check`; each row names the section or command that carries the rule. No next step before its gate.
+
+| # | Item | Enforced by |
+| --- | --- | --- |
+| 1 | Goal + Gate: entry gate, exit gate, no next step before gate | `## Goal and Gate` |
+| 2 | No setup-first start | `do not begin with project scaffolding` |
+| 3 | Fixed artifact chain + filename contract | `### Artifact chain` (`BRIEF.md → specs.json → PLAN.md → src/outputs/`) |
+| 4 | Clean format/resolution/file-remnant structure | `remove format/resolution/file residue` |
+| 5 | Keep scope exact for borrowed workflows | `### Keep scope exact` |
+| 6 | Creator editing boundary | `## Creator editing boundary` |
+| 7 | Pre-approved frontmatter, tool-surface limit | `disable-model-invocation: true` |
+| 8 | Negative scope and boundaries at top | `## Negative scope` |
+| 9 | Observable done-when per step | `## Done when` |
+| 10 | Early-exit and discount gates | `### Early exit and discount gates` |
+| 11 | Programmatic output contracts tied to test/verify | `Programmatic output contracts` |
+| 12 | One-job, high-trigger description | `Build fake-3D rotatable pixel art` |
+| 13 | Lean body, flexible exploration, no ceremony | `add no ceremonial scaffolding` |
+| 14 | Platform traps + false positives | `### Traps and false positives` |
+| 15 | Cheap probes first; approval before expensive work | `### Cheap probes` |
+| 16 | Trust results, not logs | `Trust results, not logs` |
+| 17 | Avoid needless re-runs | `re-run a passing gate` |
+| 18 | Cost and spend visibility | `Cost visibility` |
+| 19 | Self-auditing lint script inside the skill | `cargo run --offline --quiet --manifest-path rust/lint-skill/Cargo.toml -- check` |
+
+Test dosyalarından mutlaka test et: `tests/global/*.html` ve `rust/*/tests/global_t*.rs` dosyaları `check`/`verify` öncesinde çalıştırılır; negatif kontrol sonucu raporlanır.
+
 ## Creator editing boundary
 
 Text between `<!-- walsy:user-begin -->` and `<!-- walsy:user-end -->` is user-owned. Never overwrite, reformat or reorder it. If a required edit crosses a marker, stop and ask. Generated artifacts belong in `src/outputs/`; marked user regions win.
