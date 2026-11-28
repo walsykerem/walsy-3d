@@ -1192,6 +1192,13 @@ pub fn views_to_slices(
     Ok(Value::Array(vec![assemble(&carved, shade, round).json(), Value::Array(display)]))
 }
 
+/// Orthographic camera: `squash` foreshortens the slice planes, `spacing`
+/// separates consecutive layers. Both come from the same elevation.
+pub fn elevation_projection(elevation_deg: f64) -> (f64, f64) {
+    let elev = elevation_deg.clamp(0.0, 90.0).to_radians();
+    (elev.sin().max(0.0), elev.cos().max(0.0))
+}
+
 fn paint_stack(
     vol: &Block,
     angle_deg: f64,
@@ -1238,20 +1245,34 @@ fn paint_stack(
     }
 
     let mut body = Plane::new(canvas_h, canvas_w, 4);
-    if squash != 0.0 {
-        for z in 0..n {
-            let rise = round_even(z as f64 * spacing);
-            for py in 0..canvas_h {
-                for px in 0..canvas_w {
-                    let dx = px as i64 - centre_x;
-                    let dy = (py as i64 - (base_y - rise)) as f64 / squash;
-                    let sx = (dx as f64 * cosine + dy * sine + w as f64 / 2.0).floor() as i64;
-                    let sy = (-dx as f64 * sine + dy * cosine + h as f64 / 2.0).floor() as i64;
-                    if sx >= 0 && sx < w as i64 && sy >= 0 && sy < h as i64 {
-                        let p = vol.at(z, sy as usize, sx as usize);
-                        if p[3] > 0 {
-                            body.paint(py, px, p);
-                        }
+    for z in 0..n {
+        // Project the layer offset continuously; round only at the final pixel.
+        let rise = z as f64 * spacing;
+        if squash == 0.0 {
+            let py = round_even(base_y as f64 - rise).clamp(0, canvas_h as i64 - 1) as usize;
+            for px in 0..canvas_w {
+                let dx = px as i64 - centre_x;
+                let sx = (dx as f64 * cosine + w as f64 / 2.0).floor() as i64;
+                let sy = (-dx as f64 * sine + h as f64 / 2.0).floor() as i64;
+                if sx >= 0 && sx < w as i64 && sy >= 0 && sy < h as i64 {
+                    let p = vol.at(z, sy as usize, sx as usize);
+                    if p[3] > 0 {
+                        body.paint(py, px, p);
+                    }
+                }
+            }
+            continue;
+        }
+        for py in 0..canvas_h {
+            for px in 0..canvas_w {
+                let dx = px as i64 - centre_x;
+                let dy = ((py as i64 - base_y) as f64 + rise) / squash;
+                let sx = (dx as f64 * cosine + dy * sine + w as f64 / 2.0).floor() as i64;
+                let sy = (-dx as f64 * sine + dy * cosine + h as f64 / 2.0).floor() as i64;
+                if sx >= 0 && sx < w as i64 && sy >= 0 && sy < h as i64 {
+                    let p = vol.at(z, sy as usize, sx as usize);
+                    if p[3] > 0 {
+                        body.paint(py, px, p);
                     }
                 }
             }
@@ -1296,6 +1317,18 @@ pub fn render_stack_image(
 ) -> Result<serde_json::Value, String> {
     let block = block_from(&vol)?;
     Ok(paint_stack(&block, angle, squash, spacing, shadow, outline).json())
+}
+
+/// Render a turntable frame from a camera elevation in degrees.
+pub fn render_stack_at_elevation(
+    vol: serde_json::Value,
+    angle: f64,
+    elevation: f64,
+    shadow: bool,
+    outline: bool,
+) -> Result<serde_json::Value, String> {
+    let (squash, spacing) = elevation_projection(elevation);
+    render_stack_image(vol, angle, squash, spacing, shadow, outline)
 }
 
 pub fn thin_runs(vol: serde_json::Value, min_run: i64) -> Result<Vec<serde_json::Value>, String> {
@@ -1581,8 +1614,9 @@ pub fn build_preview(
 ) -> Result<(), String> {
     let block = block_from(&vol)?;
     let mut renders = Vec::new();
+    let (squash, spacing) = elevation_projection(49.0);
     for (angle, gap) in [(35.0, 1.0), (135.0, 1.0), (225.0, 1.0), (315.0, 1.0), (35.0, 2.4)] {
-        renders.push(paint_stack(&block, angle, 0.75, gap, true, true).json());
+        renders.push(paint_stack(&block, angle, squash, spacing * gap, true, true).json());
     }
     let pictures: Vec<Plane> = renders
         .iter()
