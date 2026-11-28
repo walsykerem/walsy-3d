@@ -258,6 +258,7 @@ function layout(){
   artData = artCtx.createImageData(artW, artH);
   solid = new Uint8Array(artW * artH);
   glow = { r: new Float32Array(artW * artH), g: new Float32Array(artW * artH), b: new Float32Array(artW * artH) };
+  // cx/cy are art-space: keep them across relayout so zoom stays anchored.
   state.cx = artW / 2;
   state.cy = artH / 2;
   resize();
@@ -649,6 +650,8 @@ function restart(){
   stopDrag();
   buildVolume();
   layout();
+  state.cx = artW / 2;
+  state.cy = artH / 2;
   sync();
   walsyDrawFrame();
 }
@@ -839,6 +842,8 @@ async function boot(){
   els.slices.value = String(payloadSlices);
   buildVolume();
   layout();
+  state.cx = artW / 2;
+  state.cy = artH / 2;
   sync();
   walsyDrawFrame();
 }
